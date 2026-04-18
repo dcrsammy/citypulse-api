@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const db = require("../db");
+const db = require("../DB");
 const auth = require("../middleware/auth");
 
 // GET /api/wallet/balance

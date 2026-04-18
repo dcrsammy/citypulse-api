@@ -1,5 +1,5 @@
 const router = require("express").Router();
-const db = require("../db");
+const db = require("../DB");
 
 // GET /api/events
 router.get("/", async (req, res) => {
