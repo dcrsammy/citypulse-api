@@ -1,7 +1,7 @@
 const router = require("express").Router();
 const axios = require("axios");
 const crypto = require("crypto");
-const db = require("../DB");
+const db = require("../db");
 const auth = require("../middleware/auth");
 
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
