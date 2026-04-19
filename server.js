@@ -23,6 +23,9 @@ app.use("/api/payments",      require("./routes/payments"));
 app.use("/api/notifications", require("./routes/notifications"));
 app.use("/api/vendor",        require("./routes/vendor"));
 app.use("/api/admin",         require("./routes/admin"));
+app.use("/api/menu",         require("./routes/menu"));
+app.use("/api/reservations", require("./routes/reservations"));
+app.use("/api/services",     require("./routes/services"));
 
 app.get("/health", (req, res) => {
   res.json({ status: "ok", service: "CityPulse API", version: "1.0.0" });
