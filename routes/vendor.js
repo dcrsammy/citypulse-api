@@ -67,7 +67,7 @@ router.post("/venues", async (req, res) => {
           accepts_dinein, accepts_pickup, accepts_delivery,
           delivery_fee, min_order_amount, avg_prep_time_mins,
           is_live, commission_rate)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,false,25.00)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,false,25.00)
        RETURNING *`,
       [
         req.user.id, name, slug, category, description || null, phone || null, price_range || 2,
