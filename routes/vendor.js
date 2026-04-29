@@ -62,15 +62,15 @@ router.post("/venues", async (req, res) => {
 
     const result = await db.query(
       `INSERT INTO venues
-         (vendor_id, name, slug, category, venue_type, description, phone, price_range,
+         (vendor_id, name, slug, category, description, phone, price_range,
           address, neighbourhood, city,
           accepts_dinein, accepts_pickup, accepts_delivery,
           delivery_fee, min_order_amount, avg_prep_time_mins,
           is_live, commission_rate)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,false,25.00)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,false,25.00)
        RETURNING *`,
       [
-        req.user.id, name, slug, category, category, description || null, phone || null, price_range || 2,
+        req.user.id, name, slug, category, description || null, phone || null, price_range || 2,
         address, neighbourhood, city || "Lagos",
         accepts_dinein !== false, accepts_pickup !== false, accepts_delivery === true,
         parseFloat(delivery_fee || 0), parseFloat(min_order_amount || 0), parseInt(avg_prep_time_mins || 20, 10),
