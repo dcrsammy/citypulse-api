@@ -36,8 +36,51 @@ router.get("/dashboard", async (req, res) => {
 // GET /api/vendor/venues
 router.get("/venues", async (req, res) => {
   try {
-    const result = await db.query("SELECT * FROM venues WHERE vendor_id=$1", [req.user.id]);
+    const result = await db.query("SELECT * FROM venues WHERE vendor_id=$1 ORDER BY created_at DESC", [req.user.id]);
     res.json({ venues: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/vendor/venues — vendor creates a new venue
+router.post("/venues", async (req, res) => {
+  try {
+    const {
+      name, category, description, phone, price_range,
+      address, neighbourhood, city,
+      accepts_dinein, accepts_pickup, accepts_delivery,
+      delivery_fee, min_order_amount, avg_prep_time_mins,
+    } = req.body;
+
+    if (!name || !category || !address || !neighbourhood)
+      return res.status(400).json({ error: "name, category, address and neighbourhood are required." });
+
+    // Generate a URL-safe slug from name
+    const baseSlug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    const slug     = `${baseSlug}-${Date.now().toString(36)}`;
+
+    const result = await db.query(
+      `INSERT INTO venues
+         (vendor_id, name, slug, category, venue_type, description, phone, price_range,
+          address, neighbourhood, city,
+          accepts_dinein, accepts_pickup, accepts_delivery,
+          delivery_fee, min_order_amount, avg_prep_time_mins,
+          is_live, commission_rate)
+       VALUES ($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,false,25.00)
+       RETURNING *`,
+      [
+        req.user.id, name, slug, category, description || null, phone || null, price_range || 2,
+        address, neighbourhood, city || "Lagos",
+        accepts_dinein !== false, accepts_pickup !== false, accepts_delivery === true,
+        parseFloat(delivery_fee || 0), parseFloat(min_order_amount || 0), parseInt(avg_prep_time_mins || 20, 10),
+      ]
+    );
+
+    res.status(201).json({
+      venue: result.rows[0],
+      message: "Venue submitted for review. It will go live within 24 hours.",
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
