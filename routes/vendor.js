@@ -141,3 +141,60 @@ router.patch("/bookings/:id", async (req, res) => {
 });
 
 module.exports = router;
+// GET /api/vendor/food-orders — vendor sees all food orders for their venues
+router.get("/food-orders", async (req, res) => {
+  try {
+    const orders = await db.query(
+      `SELECT fo.*, 
+              u.full_name as customer_name,
+              u.phone as customer_phone,
+              v.name as venue_name,
+              json_agg(json_build_object(
+                'name', foi.name,
+                'quantity', foi.quantity,
+                'unit_price', foi.unit_price,
+                'subtotal', foi.subtotal,
+                'special_notes', foi.special_notes
+              ) ORDER BY foi.created_at) as items
+       FROM food_orders fo
+       JOIN venues v ON fo.venue_id = v.id
+       JOIN users u ON fo.user_id = u.id
+       LEFT JOIN food_order_items foi ON foi.order_id = fo.id
+       WHERE v.vendor_id = $1
+       GROUP BY fo.id, u.full_name, u.phone, v.name
+       ORDER BY fo.created_at DESC`,
+      [req.user.id]
+    );
+    res.json({ orders: orders.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/vendor/food-orders/:id — vendor updates order status
+router.patch("/food-orders/:id", async (req, res) => {
+  try {
+    const { status } = req.body;
+    const allowed = ["confirmed", "preparing", "ready", "on_the_way", "completed", "cancelled"];
+    if (!allowed.includes(status))
+      return res.status(400).json({ error: "Invalid status." });
+
+    // Verify this order belongs to vendor's venue
+    const check = await db.query(
+      `SELECT fo.id FROM food_orders fo
+       JOIN venues v ON fo.venue_id = v.id
+       WHERE fo.id=$1 AND v.vendor_id=$2`,
+      [req.params.id, req.user.id]
+    );
+    if (!check.rows[0])
+      return res.status(403).json({ error: "Order not found or access denied." });
+
+    const result = await db.query(
+      "UPDATE food_orders SET order_status=$1, updated_at=NOW() WHERE id=$2 RETURNING *",
+      [status, req.params.id]
+    );
+    res.json({ order: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
