@@ -5,23 +5,6 @@ const auth   = require("../middleware/auth");
 
 router.use(auth);
 
-const sendPush = async (fcmToken, title, body, data = {}) => {
-  if (!fcmToken || !process.env.FIREBASE_PROJECT_ID) return;
-  try {
-    const axios = require('axios');
-    const { GoogleAuth } = require('google-auth-library');
-    const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/firebase.messaging'] });
-    const token = await auth.getAccessToken();
-    await axios.post(
-      `https://fcm.googleapis.com/v1/projects/${process.env.FIREBASE_PROJECT_ID}/messages:send`,
-      { message: { token: fcmToken, notification: { title, body }, data } },
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-  } catch (e) { console.log('FCM error:', e.message); }
-};
-
-
-// POST /api/food-orders — place a new food order
 router.post("/", async (req, res) => {
   const client = await db.pool.connect();
   try {
