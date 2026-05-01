@@ -1,8 +1,25 @@
+const { sendPush } = require("../services/notifications");
 const router = require("express").Router();
 const db     = require("../db");
 const auth   = require("../middleware/auth");
 
 router.use(auth);
+
+const sendPush = async (fcmToken, title, body, data = {}) => {
+  if (!fcmToken || !process.env.FIREBASE_PROJECT_ID) return;
+  try {
+    const axios = require('axios');
+    const { GoogleAuth } = require('google-auth-library');
+    const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/firebase.messaging'] });
+    const token = await auth.getAccessToken();
+    await axios.post(
+      `https://fcm.googleapis.com/v1/projects/${process.env.FIREBASE_PROJECT_ID}/messages:send`,
+      { message: { token: fcmToken, notification: { title, body }, data } },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+  } catch (e) { console.log('FCM error:', e.message); }
+};
+
 
 // POST /api/food-orders — place a new food order
 router.post("/", async (req, res) => {
@@ -14,6 +31,7 @@ router.post("/", async (req, res) => {
       venue_id, order_type, delivery_address,
       special_requests, items, subtotal,
       delivery_fee, total_amount, payment_method,
+      promo_code, discount_amount,
     } = req.body;
 
     if (!venue_id || !order_type || !items?.length)
@@ -166,6 +184,21 @@ router.patch("/:id/status", async (req, res) => {
     );
     if (!result.rows[0]) return res.status(404).json({ error: "Order not found." });
 
+    // Send push notification to consumer
+    const order = result.rows[0];
+    const statusMessages = {
+      confirmed:  { title: "Order Confirmed! 👍", body: "Your order has been accepted and will be prepared soon." },
+      preparing:  { title: "Being Prepared 👨‍🍳", body: "Your food is being prepared right now!" },
+      ready:      { title: "Order Ready! 🔔", body: "Your order is ready. Come pick it up or it will be brought to you." },
+      on_the_way: { title: "On The Way! 🛵", body: "Your order is on its way to you." },
+      completed:  { title: "Order Completed ✅", body: "Enjoy your meal! Leave a review to earn bonus CPP points." },
+      cancelled:  { title: "Order Cancelled", body: "Your order has been cancelled. Contact support if this is unexpected." },
+    };
+    const msg = statusMessages[status];
+    if (msg) {
+      await sendPush(order.user_id, msg.title, msg.body, { type: "order_update", order_id: order.id, status });
+    }
+
     // Award CPP on completion (paystack payments)
     if (status === "completed") {
       const order = result.rows[0];
@@ -179,7 +212,27 @@ router.patch("/:id/status", async (req, res) => {
       }
     }
 
-    res.json({ order: result.rows[0] });
+    const updatedOrder = result.rows[0];
+
+    // Send push notification to consumer
+    try {
+      const userRes = await db.query('SELECT fcm_token, full_name FROM users WHERE id=', [updatedOrder.user_id]);
+      const user = userRes.rows[0];
+      if (user && user.fcm_token) {
+        const statusMessages = {
+          confirmed:  'Your order has been confirmed!',
+          preparing:  'The kitchen is preparing your order.',
+          ready:      'Your order is ready!',
+          on_the_way: 'Your order is on the way!',
+          completed:  'Order complete. Enjoy your meal!',
+          cancelled:  'Your order has been cancelled.',
+        };
+        const msg = statusMessages[status];
+        if (msg) await sendPush(user.fcm_token, 'CityPulse Order Update', msg, { order_id: updatedOrder.id, status });
+      }
+    } catch (pushErr) { console.error('Push error:', pushErr.message); }
+
+    res.json({ order: updatedOrder });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

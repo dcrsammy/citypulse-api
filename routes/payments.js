@@ -26,7 +26,8 @@ router.post("/initialize", auth, async (req, res) => {
     );
     res.json(response.data.data);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    const paystackError = err.response?.data?.message || err.message;
+    res.status(err.response?.status || 500).json({ error: paystackError });
   }
 });
 
@@ -83,6 +84,40 @@ router.get("/banks", async (req, res) => {
     res.json({ banks: response.data.data });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+
+// POST /api/payments/confirm-order/:orderId
+router.post("/confirm-order/:orderId", auth, async (req, res) => {
+  try {
+    const { reference } = req.body;
+    // Verify with Paystack
+    const response = await axios.get(
+      `https://api.paystack.co/transaction/verify/${reference}`,
+      { headers }
+    );
+    const data = response.data.data;
+    if (data.status !== "success")
+      return res.status(400).json({ error: "Payment not successful." });
+
+    // Update order status
+    const order = await db.query(
+      `UPDATE food_orders SET payment_status='paid', order_status='confirmed', payment_ref=$1, updated_at=NOW()
+       WHERE id=$2 AND user_id=$3 RETURNING *`,
+      [reference, req.params.orderId, req.user.id]
+    );
+    if (!order.rows[0]) return res.status(404).json({ error: "Order not found." });
+
+    // Award CPP points
+    const o = order.rows[0];
+    if (o.cpp_earned > 0) {
+      await db.query("UPDATE users SET cpp_points=cpp_points+$1 WHERE id=$2", [o.cpp_earned, req.user.id]);
+    }
+
+    res.json({ order: order.rows[0], message: "Payment confirmed." });
+  } catch (err) {
+    res.status(500).json({ error: err.response?.data?.message || err.message });
   }
 });
 

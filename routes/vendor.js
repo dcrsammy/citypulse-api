@@ -238,3 +238,166 @@ router.patch("/venues/:id", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// GET /api/vendor/payouts — vendor payout history
+router.get("/payouts", async (req, res) => {
+  try {
+    const vendor = await db.query("SELECT available_payout, total_earnings FROM vendors WHERE id=$1", [req.user.id]);
+    const payouts = await db.query(
+      "SELECT * FROM vendor_payouts WHERE vendor_id=$1 ORDER BY created_at DESC",
+      [req.user.id]
+    );
+    res.json({ available_payout: vendor.rows[0]?.available_payout || 0, total_earnings: vendor.rows[0]?.total_earnings || 0, payouts: payouts.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/vendor/payouts/request — request a payout
+router.post("/payouts/request", async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    await client.query("BEGIN");
+    const vendor = await client.query("SELECT available_payout, payout_bank, payout_account, payout_name FROM vendors WHERE id=$1", [req.user.id]);
+    const v = vendor.rows[0];
+    if (!v) return res.status(404).json({ error: "Vendor not found." });
+    const amount = parseFloat(v.available_payout || 0);
+    if (amount < 1000) return res.status(400).json({ error: "Minimum payout amount is ₦1,000." });
+    if (!v.payout_bank || !v.payout_account) return res.status(400).json({ error: "Add your bank details before requesting a payout." });
+
+    const payout = await client.query(
+      `INSERT INTO vendor_payouts (vendor_id, amount, fee_deducted, net_amount, status)
+       VALUES ($1,$2,0,$2,'pending') RETURNING *`,
+      [req.user.id, amount]
+    );
+    await client.query("UPDATE vendors SET available_payout=0 WHERE id=$1", [req.user.id]);
+    await client.query("COMMIT");
+    res.json({ payout: payout.rows[0], message: "Payout request submitted. Processing within 2-3 business days." });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// PATCH /api/vendor/bank — update bank details
+router.patch("/bank", async (req, res) => {
+  try {
+    const { payout_bank, payout_account, payout_name } = req.body;
+    if (!payout_bank || !payout_account || !payout_name)
+      return res.status(400).json({ error: "Bank name, account number and account name are required." });
+    await db.query(
+      "UPDATE vendors SET payout_bank=$1, payout_account=$2, payout_name=$3 WHERE id=$4",
+      [payout_bank, payout_account, payout_name, req.user.id]
+    );
+    res.json({ message: "Bank details updated." });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/vendor/payout — get payout info
+router.get("/payout", async (req, res) => {
+  try {
+    const vendor = await db.query(
+      "SELECT available_payout, total_earnings, payout_bank, payout_account, payout_name FROM vendors WHERE id=$1",
+      [req.user.id]
+    );
+    const payouts = await db.query(
+      "SELECT * FROM vendor_payouts WHERE vendor_id=$1 ORDER BY created_at DESC LIMIT 20",
+      [req.user.id]
+    );
+    res.json({ vendor: vendor.rows[0], payouts: payouts.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/vendor/payout — request payout
+router.post("/payout", async (req, res) => {
+  try {
+    const { amount } = req.body;
+    const vendor = await db.query(
+      "SELECT available_payout, payout_bank, payout_account FROM vendors WHERE id=$1",
+      [req.user.id]
+    );
+    const v = vendor.rows[0];
+    if (!v) return res.status(404).json({ error: "Vendor not found." });
+    if (!v.payout_bank || !v.payout_account)
+      return res.status(400).json({ error: "Add your bank details in Settings before requesting a payout." });
+    if (parseFloat(amount) > parseFloat(v.available_payout))
+      return res.status(400).json({ error: "Insufficient payout balance." });
+    if (parseFloat(amount) < 5000)
+      return res.status(400).json({ error: "Minimum payout amount is ₦5,000." });
+
+    const net = parseFloat(amount);
+    await db.query("UPDATE vendors SET available_payout=available_payout-$1 WHERE id=$2", [net, req.user.id]);
+    const payout = await db.query(
+      `INSERT INTO vendor_payouts (vendor_id, amount, fee_deducted, net_amount, status)
+       VALUES ($1,$2,0,$2,'pending') RETURNING *`,
+      [req.user.id, net]
+    );
+    res.status(201).json({ payout: payout.rows[0], message: "Payout request submitted. Processing within 2-3 business days." });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/vendor/bank — update bank details
+router.patch("/bank", async (req, res) => {
+  try {
+    const { payout_bank, payout_account, payout_name } = req.body;
+    await db.query(
+      "UPDATE vendors SET payout_bank=$1, payout_account=$2, payout_name=$3 WHERE id=$4",
+      [payout_bank, payout_account, payout_name, req.user.id]
+    );
+    res.json({ message: "Bank details updated." });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/vendor/payout-info
+router.get("/payout-info", async (req, res) => {
+  try {
+    const vendor = await db.query(
+      "SELECT available_payout, total_earnings, payout_bank, payout_account, payout_name FROM vendors WHERE id=$1",
+      [req.user.id]
+    );
+    const payouts = await db.query(
+      "SELECT * FROM vendor_payouts WHERE vendor_id=$1 ORDER BY created_at DESC LIMIT 20",
+      [req.user.id]
+    );
+    res.json({ ...vendor.rows[0], payouts: payouts.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/vendor/payout-request
+router.post("/payout-request", async (req, res) => {
+  try {
+    const { amount } = req.body;
+    const vendor = await db.query(
+      "SELECT available_payout, payout_bank, payout_account, payout_name FROM vendors WHERE id=$1",
+      [req.user.id]
+    );
+    const v = vendor.rows[0];
+    if (!v.payout_bank) return res.status(400).json({ error: "No bank account linked. Contact support." });
+    if (parseFloat(v.available_payout) < amount)
+      return res.status(400).json({ error: "Insufficient balance." });
+    if (amount < 1000)
+      return res.status(400).json({ error: "Minimum payout is ₦1,000." });
+
+    await db.query("UPDATE vendors SET available_payout=available_payout-$1 WHERE id=$2", [amount, req.user.id]);
+    const payout = await db.query(
+      `INSERT INTO vendor_payouts (vendor_id, amount, fee_deducted, net_amount, status)
+       VALUES ($1,$2,0,$2,'pending') RETURNING *`,
+      [req.user.id, amount]
+    );
+    res.json({ payout: payout.rows[0], message: "Payout requested. Processing in 2 business days." });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});

@@ -18,6 +18,19 @@ router.post("/", auth, async (req, res) => {
 
     if (!venue_id || !reservation_date || !arrival_time || !party_size)
       return res.status(400).json({ error: "venue_id, date, arrival_time and party_size are required." });
+    // Check seat availability
+    const venueData = await db.query('SELECT total_seats FROM venues WHERE id=$1', [venue_id]);
+    const totalSeats = venueData.rows[0]?.total_seats;
+    if (totalSeats) {
+      const booked = await db.query(
+        'SELECT COALESCE(SUM(party_size),0) as total FROM reservations WHERE venue_id=$1 AND reservation_date=$2 AND arrival_time=$3 AND status NOT IN ('cancelled')',
+        [venue_id, reservation_date, arrival_time]
+      );
+      const bookedSeats = parseInt(booked.rows[0].total);
+      if (bookedSeats + parseInt(party_size) > totalSeats)
+        return res.status(400).json({ error: 'Sorry, not enough seats available for this time. Please choose a different time.' });
+    }
+
 
     const hasPreOrder = pre_order_items && pre_order_items.length > 0;
     const qrCode = "CPR-" + Date.now() + "-" + Math.random().toString(36).substring(2, 7).toUpperCase();
