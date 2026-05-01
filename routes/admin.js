@@ -120,3 +120,76 @@ router.get("/users", async (req, res) => {
 });
 
 module.exports = router;
+// GET /api/admin/venues/pending — venues awaiting approval
+router.get("/venues/pending", async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT v.*, vn.business_name as vendor_name, vn.email as vendor_email, vn.phone as vendor_phone
+       FROM venues v JOIN vendors vn ON v.vendor_id = vn.id
+       WHERE v.is_live = false
+       ORDER BY v.created_at DESC`
+    );
+    res.json({ venues: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/admin/venues/:id/approve
+router.patch("/venues/:id/approve", async (req, res) => {
+  try {
+    const result = await db.query(
+      "UPDATE venues SET is_live=true, updated_at=NOW() WHERE id=$1 RETURNING name",
+      [req.params.id]
+    );
+    res.json({ message: `${result.rows[0]?.name} is now live.` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/admin/venues/:id/reject
+router.patch("/venues/:id/reject", async (req, res) => {
+  try {
+    await db.query("DELETE FROM venues WHERE id=$1", [req.params.id]);
+    res.json({ message: "Venue rejected and removed." });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/users — all users
+router.get("/users", async (req, res) => {
+  try {
+    const result = await db.query(
+      "SELECT id, full_name, email, phone, cpp_tier, cpp_points, wallet_balance, created_at, is_active FROM users ORDER BY created_at DESC LIMIT 100"
+    );
+    res.json({ users: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/vendors — all vendors
+router.get("/vendors", async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT vn.*, COUNT(v.id) as venue_count
+       FROM vendors vn LEFT JOIN venues v ON v.vendor_id = vn.id
+       GROUP BY vn.id ORDER BY vn.created_at DESC`
+    );
+    res.json({ vendors: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/admin/vendors/:id/verify
+router.patch("/vendors/:id/verify", async (req, res) => {
+  try {
+    await db.query("UPDATE vendors SET is_verified=true WHERE id=$1", [req.params.id]);
+    res.json({ message: "Vendor verified." });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});

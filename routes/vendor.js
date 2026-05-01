@@ -198,3 +198,43 @@ router.patch("/food-orders/:id", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// PATCH /api/vendor/venues/:id — vendor edits their venue
+router.patch("/venues/:id", async (req, res) => {
+  try {
+    const {
+      name, description, phone, address, neighbourhood,
+      price_range, total_seats, delivery_fee, min_order_amount,
+      avg_prep_time_mins, accepts_dinein, accepts_pickup, accepts_delivery,
+      cover_image, opening_hours,
+    } = req.body;
+
+    // Confirm venue belongs to this vendor
+    const check = await db.query(
+      "SELECT id FROM venues WHERE id=$1 AND vendor_id=$2",
+      [req.params.id, req.user.id]
+    );
+    if (!check.rows[0]) return res.status(403).json({ error: "Venue not found." });
+
+    const result = await db.query(
+      `UPDATE venues SET
+        name=$1, description=$2, phone=$3, address=$4, neighbourhood=$5,
+        price_range=$6, total_seats=$7, delivery_fee=$8, min_order_amount=$9,
+        avg_prep_time_mins=$10, accepts_dinein=$11, accepts_pickup=$12,
+        accepts_delivery=$13, cover_image=$14, opening_hours=$15, updated_at=NOW()
+       WHERE id=$16 RETURNING *`,
+      [
+        name, description || null, phone || null, address, neighbourhood,
+        price_range || 2, total_seats || null,
+        parseFloat(delivery_fee || 0), parseFloat(min_order_amount || 0),
+        parseInt(avg_prep_time_mins || 20),
+        accepts_dinein !== false, accepts_pickup !== false, accepts_delivery === true,
+        cover_image || null, opening_hours ? JSON.stringify(opening_hours) : null,
+        req.params.id,
+      ]
+    );
+    res.json({ venue: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
