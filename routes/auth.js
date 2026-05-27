@@ -156,5 +156,29 @@ router.get("/test-db", async (req, res) => {
     res.status(500).json({ connected: false, error: err.message });
   }
 });
+// POST /api/auth/vendor/register
+router.post('/vendor/register', async (req, res) => {
+  try {
+    const { business_name, email, phone, password } = req.body;
+    if (!business_name || !email || !password)
+      return res.status(400).json({ error: 'Business name, email and password are required.' });
 
+    const exists = await db.query('SELECT id FROM vendors WHERE email=$1', [email]);
+    if (exists.rows[0]) return res.status(409).json({ error: 'Email already registered.' });
+
+    const password_hash = await bcrypt.hash(password, 12);
+
+    const result = await db.query(
+      `INSERT INTO vendors (business_name, email, phone, password_hash, is_verified)
+       VALUES ($1,$2,$3,$4,false) RETURNING *`,
+      [business_name.trim(), email.trim().toLowerCase(), phone || null, password_hash]
+    );
+    const vendor = result.rows[0];
+    const token  = signToken({ id: vendor.id, role: 'vendor' });
+    const { password_hash: _, ...safe } = vendor;
+    res.status(201).json({ token, vendor: safe });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 module.exports = router;
