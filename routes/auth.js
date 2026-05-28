@@ -91,7 +91,7 @@ router.post('/vendor/register', async (req, res) => {
       [business_name.trim(), email.trim().toLowerCase(), phone || null, password_hash]
     );
     const vendor = result.rows[0];
-    const token  = signToken({ id: vendor.id, role: 'vendor' });
+    const token = jwt.sign({ id: vendor.id, role: 'vendor' }, process.env.JWT_SECRET, { expiresIn: '30d' });
     const { password_hash: _, ...safe } = vendor;
     res.status(201).json({ token, vendor: safe });
   } catch (err) {
