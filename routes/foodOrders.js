@@ -34,15 +34,15 @@ router.post("/", async (req, res) => {
       `INSERT INTO food_orders
          (user_id, venue_id, order_type, delivery_address, special_requests,
           subtotal, delivery_fee, platform_fee, total_amount,
-          payment_method, payment_status, order_status, cpp_earned)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending','pending',$11)
+          payment_method, payment_status, order_status, cpp_earned, verification_pin)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending','pending',$11,$12)
        RETURNING *`,
       [
         req.user.id, venue_id, order_type,
         delivery_address || null, special_requests || null,
         parseFloat(subtotal || 0), parseFloat(delivery_fee || 0),
         platformFee, parseFloat(total_amount),
-        payment_method || "paystack", cppEarned,
+        payment_method || "paystack", cppEarned, verification_pin,
       ]
     );
     const order = orderRes.rows[0];
