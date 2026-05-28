@@ -149,3 +149,49 @@ router.get('/me', require('../middleware/auth'), async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// POST /api/auth/send-verification — send OTP email
+router.post('/send-verification', require('../middleware/auth'), async (req, res) => {
+  try {
+    const { sendVerificationEmail } = require('../services/email');
+    const code    = Math.floor(100000 + Math.random() * 900000).toString();
+    const expires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    const userRes = await db.query('SELECT * FROM users WHERE id=$1', [req.user.id]);
+    const user    = userRes.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+    if (user.email_verified) return res.json({ message: 'Email already verified.' });
+
+    await db.query(
+      'UPDATE users SET verification_code=$1, verification_expires=$2 WHERE id=$3',
+      [code, expires, req.user.id]
+    );
+
+    await sendVerificationEmail(user.email, code, user.full_name);
+    res.json({ message: 'Verification code sent to ' + user.email });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/auth/verify-email — verify OTP code
+router.post('/verify-email', require('../middleware/auth'), async (req, res) => {
+  try {
+    const { code } = req.body;
+    const userRes  = await db.query('SELECT * FROM users WHERE id=$1', [req.user.id]);
+    const user     = userRes.rows[0];
+
+    if (user.email_verified) return res.json({ message: 'Already verified.' });
+    if (!user.verification_code) return res.status(400).json({ error: 'No code sent. Request a new one.' });
+    if (new Date() > new Date(user.verification_expires)) return res.status(400).json({ error: 'Code expired. Request a new one.' });
+    if (user.verification_code !== code) return res.status(400).json({ error: 'Incorrect code. Try again.' });
+
+    await db.query(
+      'UPDATE users SET email_verified=true, verification_code=NULL, verification_expires=NULL WHERE id=$1',
+      [req.user.id]
+    );
+    res.json({ message: 'Email verified successfully!', verified: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
