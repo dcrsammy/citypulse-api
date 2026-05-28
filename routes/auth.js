@@ -133,3 +133,19 @@ router.patch('/profile', require('../middleware/auth'), async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// GET /api/auth/me
+router.get('/me', require('../middleware/auth'), async (req, res) => {
+  try {
+    if (req.user.role === 'vendor') {
+      const result = await db.query('SELECT * FROM vendors WHERE id=$1', [req.user.id]);
+      const { password_hash: _, ...safe } = result.rows[0];
+      return res.json({ ...safe, role: 'vendor' });
+    }
+    const result = await db.query('SELECT * FROM users WHERE id=$1', [req.user.id]);
+    const { password_hash: _, ...safe } = result.rows[0];
+    res.json({ ...safe, role: req.user.role });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
