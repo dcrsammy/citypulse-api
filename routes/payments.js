@@ -169,8 +169,7 @@ router.post('/topup/confirm', auth, async (req, res) => {
     const amount  = data.amount / 100;
     const user_id = data.metadata?.user_id || req.user.id;
 
-    await db.query(
-    // Wallet already credited by webhook - just return updated balance
+    // Wallet already credited by webhook
 
 
 
