@@ -79,7 +79,7 @@ router.post("/login", async (req, res) => {
 // POST /api/auth/vendor/register
 router.post('/vendor/register', async (req, res) => {
   try {
-    const { business_name, email, phone, password } = req.body;
+    const { business_name, email, phone, password, owner_full_name, cac_number, business_address, owner_bvn } = req.body;
     if (!business_name || !email || !password)
       return res.status(400).json({ error: 'Business name, email and password are required.' });
 
@@ -91,7 +91,7 @@ router.post('/vendor/register', async (req, res) => {
     const result = await db.query(
       `INSERT INTO vendors (business_name, email, phone, password_hash, is_verified)
        VALUES ($1,$2,$3,$4,false) RETURNING *`,
-      [business_name.trim(), email.trim().toLowerCase(), phone || null, password_hash]
+      [business_name.trim(), email.trim().toLowerCase(), phone || null, password_hash, owner_full_name || null, cac_number || null, business_address || null, owner_bvn || null]
     );
     const vendor = result.rows[0];
     const token = jwt.sign({ id: vendor.id, role: 'vendor' }, process.env.JWT_SECRET, { expiresIn: '30d' });

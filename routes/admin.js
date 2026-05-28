@@ -193,3 +193,47 @@ router.patch("/vendors/:id/verify", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// GET /api/admin/kyc — vendors with pending KYC
+router.get("/kyc", async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT id, business_name, email, phone, owner_full_name, 
+              cac_number, business_address, owner_bvn, kyc_status, 
+              kyc_submitted_at, created_at
+       FROM vendors 
+       WHERE kyc_status = 'pending'
+       ORDER BY kyc_submitted_at ASC`
+    );
+    res.json({ vendors: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/admin/kyc/:id/approve
+router.patch("/kyc/:id/approve", async (req, res) => {
+  try {
+    await db.query(
+      `UPDATE vendors SET kyc_status='approved', is_verified=true, kyc_reviewed_at=NOW() WHERE id=$1`,
+      [req.params.id]
+    );
+    res.json({ message: "KYC approved. Vendor is now verified." });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/admin/kyc/:id/reject
+router.patch("/kyc/:id/reject", async (req, res) => {
+  try {
+    const { reason } = req.body;
+    await db.query(
+      `UPDATE vendors SET kyc_status='rejected', kyc_reviewed_at=NOW(), kyc_reject_reason=$1 WHERE id=$2`,
+      [reason || 'Documents not valid', req.params.id]
+    );
+    res.json({ message: "KYC rejected." });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
