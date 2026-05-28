@@ -118,3 +118,18 @@ router.post('/vendor/login', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// PATCH /api/auth/profile
+router.patch('/profile', auth, async (req, res) => {
+  try {
+    const { full_name, phone } = req.body;
+    const result = await db.query(
+      'UPDATE users SET full_name=$1, phone=$2, updated_at=NOW() WHERE id=$3 RETURNING *',
+      [full_name, phone || null, req.user.id]
+    );
+    const { password_hash: _, ...safe } = result.rows[0];
+    res.json({ user: safe });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
