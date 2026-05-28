@@ -122,3 +122,61 @@ router.post("/confirm-order/:orderId", auth, async (req, res) => {
 });
 
 module.exports = router;
+// POST /api/payments/topup — initialize wallet top-up
+router.post('/topup', auth, async (req, res) => {
+  try {
+    const { amount } = req.body;
+    if (!amount || amount < 100) return res.status(400).json({ error: 'Minimum top-up is ₦100.' });
+
+    const userRes = await db.query('SELECT email FROM users WHERE id=$1', [req.user.id]);
+    const user    = userRes.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+
+    const response = await axios.post(
+      'https://api.paystack.co/transaction/initialize',
+      {
+        email:        user.email,
+        amount:       Math.round(amount * 100),
+        callback_url: process.env.PAYSTACK_CALLBACK_URL,
+        metadata: {
+          type:    'wallet_topup',
+          user_id: req.user.id,
+          amount,
+        },
+      },
+      { headers }
+    );
+    res.json({
+      authorization_url: response.data.data.authorization_url,
+      reference:         response.data.data.reference,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/payments/topup/confirm — confirm wallet top-up after payment
+router.post('/topup/confirm', auth, async (req, res) => {
+  try {
+    const { reference } = req.body;
+    const response = await axios.get(
+      `https://api.paystack.co/transaction/verify/${reference}`,
+      { headers }
+    );
+    const data = response.data.data;
+    if (data.status !== 'success') return res.status(400).json({ error: 'Payment not successful.' });
+
+    const amount  = data.amount / 100;
+    const user_id = data.metadata?.user_id || req.user.id;
+
+    await db.query(
+      'UPDATE users SET wallet_balance = wallet_balance + $1 WHERE id=$2',
+      [amount, user_id]
+    );
+
+    const updated = await db.query('SELECT wallet_balance FROM users WHERE id=$1', [user_id]);
+    res.json({ message: `₦${amount.toLocaleString()} added to wallet!`, wallet_balance: updated.rows[0].wallet_balance });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
