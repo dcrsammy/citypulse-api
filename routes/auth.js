@@ -119,8 +119,8 @@ router.post('/vendor/login', async (req, res) => {
   }
 });
 
-// PATCH /api/auth/profile
-router.patch('/profile', auth, async (req, res) => {
+// PATCH /api/auth/profile - uses auth middleware from server
+router.patch('/profile', require('../middleware/auth'), async (req, res) => {
   try {
     const { full_name, phone } = req.body;
     const result = await db.query(
