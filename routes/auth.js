@@ -99,3 +99,19 @@ router.post('/vendor/register', async (req, res) => {
   }
 });
 module.exports = router;
+// POST /api/auth/vendor/login
+router.post('/vendor/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const result = await db.query('SELECT * FROM vendors WHERE email=$1', [email]);
+    const vendor = result.rows[0];
+    if (!vendor) return res.status(401).json({ error: 'Invalid credentials.' });
+    const match = await bcrypt.compare(password, vendor.password_hash);
+    if (!match) return res.status(401).json({ error: 'Invalid credentials.' });
+    const token = jwt.sign({ id: vendor.id, role: 'vendor' }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    const { password_hash: _, ...safe } = vendor;
+    res.json({ token, vendor: safe });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
