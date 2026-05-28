@@ -1,3 +1,4 @@
+const ADMIN_EMAILS = ['admin@citypulse.ng'];
 const router  = require("express").Router();
 const bcrypt  = require("bcryptjs");
 const jwt     = require("jsonwebtoken");
