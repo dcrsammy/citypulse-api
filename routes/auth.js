@@ -89,8 +89,8 @@ router.post('/vendor/register', async (req, res) => {
     const password_hash = await bcrypt.hash(password, 12);
 
     const result = await db.query(
-      `INSERT INTO vendors (business_name, email, phone, password_hash, is_verified)
-       VALUES ($1,$2,$3,$4,false) RETURNING *`,
+      `INSERT INTO vendors (business_name, email, phone, password_hash, is_verified, owner_full_name, cac_number, business_address, owner_bvn, kyc_status, kyc_submitted_at)
+       VALUES ($1,$2,$3,$4,false,$5,$6,$7,$8,'pending',NOW()) RETURNING *`,
       [business_name.trim(), email.trim().toLowerCase(), phone || null, password_hash, owner_full_name || null, cac_number || null, business_address || null, owner_bvn || null]
     );
     const vendor = result.rows[0];
