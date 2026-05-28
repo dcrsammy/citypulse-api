@@ -170,9 +170,9 @@ router.post('/topup/confirm', auth, async (req, res) => {
     const user_id = data.metadata?.user_id || req.user.id;
 
     await db.query(
-      'UPDATE users SET wallet_balance = wallet_balance + $1 WHERE id=$2',
-      [amount, user_id]
-    );
+    // Wallet already credited by webhook - just return updated balance
+
+
 
     const updated = await db.query('SELECT wallet_balance FROM users WHERE id=$1', [user_id]);
     res.json({ message: `₦${amount.toLocaleString()} added to wallet!`, wallet_balance: updated.rows[0].wallet_balance });
