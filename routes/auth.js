@@ -42,7 +42,8 @@ router.post("/register", async (req, res) => {
       );
     }
 
-    const token = jwt.sign({ id: user.id, role: "user" }, process.env.JWT_SECRET, { expiresIn: "30d" });
+    const role = ADMIN_EMAILS.includes(user.email) ? "admin" : "user";
+    const token = jwt.sign({ id: user.id, role }, process.env.JWT_SECRET, { expiresIn: "30d" });
     res.status(201).json({ token, user });
   } catch (err) {
     console.error("Register error:", err.message);
@@ -65,7 +66,8 @@ router.post("/login", async (req, res) => {
     if (!user || !(await bcrypt.compare(password, user.password_hash)))
       return res.status(401).json({ error: "Invalid credentials." });
 
-    const token = jwt.sign({ id: user.id, role: "user" }, process.env.JWT_SECRET, { expiresIn: "30d" });
+    const role = ADMIN_EMAILS.includes(user.email) ? "admin" : "user";
+    const token = jwt.sign({ id: user.id, role }, process.env.JWT_SECRET, { expiresIn: "30d" });
     const { password_hash, ...safe } = user;
     res.json({ token, user: safe });
   } catch (err) {
