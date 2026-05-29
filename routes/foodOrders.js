@@ -1,4 +1,5 @@
 const { sendPush } = require("../services/notifications");
+const { notifyNewOrder } = require("../services/notifications");
 const router = require("express").Router();
 const db     = require("../db");
 const auth   = require("../middleware/auth");
@@ -9,7 +10,6 @@ router.post("/", async (req, res) => {
   const client = await db.pool.connect();
   try {
     await client.query("BEGIN");
-
     const {
       venue_id, order_type, delivery_address,
       special_requests, items, subtotal,
@@ -63,42 +63,26 @@ router.post("/", async (req, res) => {
       );
     }
 
-    // Wallet payment — deduct immediately
-    if (payment_method === "wallet") {
-      const userRes = await client.query("SELECT wallet_balance FROM users WHERE id=$1", [req.user.id]);
-      const balance = parseFloat(userRes.rows[0]?.wallet_balance || 0);
-      if (balance < parseFloat(total_amount))
-        throw new Error("Insufficient wallet balance.");
-
+    // Handle promo code
+    if (promo_code) {
       await client.query(
-        "UPDATE users SET wallet_balance=wallet_balance-$1 WHERE id=$2",
-        [total_amount, req.user.id]
+        `INSERT INTO promo_usage (user_id, promo_code) VALUES ($1, $2)`,
+        [req.user.id, promo_code]
       );
-      await client.query(
-        `INSERT INTO wallet_transactions
-           (user_id,type,amount,balance_after,description,status)
-         VALUES ($1,'debit',$2,(SELECT wallet_balance FROM users WHERE id=$1),$3,'completed')`,
-        [req.user.id, total_amount, `Food order at venue`]
-      );
-      await client.query(
-        "UPDATE food_orders SET payment_status='paid', order_status='confirmed' WHERE id=$1",
-        [order.id]
-      );
-      order.payment_status = "paid";
-      order.order_status   = "confirmed";
-
-      // Award CPP
-      if (cppEarned > 0) {
-        await client.query("UPDATE users SET cpp_points=cpp_points+$1 WHERE id=$2", [cppEarned, req.user.id]);
-        await client.query(
-          `INSERT INTO cpp_transactions (user_id,type,amount,description,order_id)
-           VALUES ($1,'earn',$2,$3,$4)`,
-          [req.user.id, cppEarned, `Earned from food order`, order.id]
-        );
-      }
     }
 
     await client.query("COMMIT");
+
+    // 📧 SEND EMAIL TO VENDOR AFTER ORDER IS CONFIRMED
+    const customerRes = await client.query("SELECT full_name FROM users WHERE id=$1", [req.user.id]);
+    const customer = customerRes.rows[0];
+    
+    if (customer) {
+      notifyNewOrder(venue_id, order.id, customer.full_name, total_amount).catch(err => 
+        console.error('Email notification failed:', err.message)
+      );
+    }
+
     res.status(201).json({ order, message: "Order placed successfully." });
   } catch (err) {
     await client.query("ROLLBACK");
@@ -168,7 +152,6 @@ router.patch("/:id/status", async (req, res) => {
     );
     if (!result.rows[0]) return res.status(404).json({ error: "Order not found." });
 
-    // Send push notification to consumer
     const order = result.rows[0];
     const statusMessages = {
       confirmed:  { title: "Order Confirmed! 👍", body: "Your order has been accepted and will be prepared soon." },
@@ -185,7 +168,6 @@ router.patch("/:id/status", async (req, res) => {
 
     // Award CPP on completion (paystack payments)
     if (status === "completed") {
-      const order = result.rows[0];
       if (order.cpp_earned > 0 && order.payment_method !== "wallet") {
         await db.query("UPDATE users SET cpp_points=cpp_points+$1 WHERE id=$2", [order.cpp_earned, order.user_id]);
         await db.query(
@@ -196,27 +178,7 @@ router.patch("/:id/status", async (req, res) => {
       }
     }
 
-    const updatedOrder = result.rows[0];
-
-    // Send push notification to consumer
-    try {
-      const userRes = await db.query('SELECT fcm_token, full_name FROM users WHERE id=', [updatedOrder.user_id]);
-      const user = userRes.rows[0];
-      if (user && user.fcm_token) {
-        const statusMessages = {
-          confirmed:  'Your order has been confirmed!',
-          preparing:  'The kitchen is preparing your order.',
-          ready:      'Your order is ready!',
-          on_the_way: 'Your order is on the way!',
-          completed:  'Order complete. Enjoy your meal!',
-          cancelled:  'Your order has been cancelled.',
-        };
-        const msg = statusMessages[status];
-        if (msg) await sendPush(user.fcm_token, 'CityPulse Order Update', msg, { order_id: updatedOrder.id, status });
-      }
-    } catch (pushErr) { console.error('Push error:', pushErr.message); }
-
-    res.json({ order: updatedOrder });
+    res.json({ order });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

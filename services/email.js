@@ -1,20 +1,79 @@
 const { Resend } = require('resend');
 
-async function sendVerificationEmail(email, code, name) {
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+async function sendEmail(to, subject, html) {
   try {
-    const resend = new Resend(process.env.RESEND_API_KEY);
     const result = await resend.emails.send({
-      from: 'CityPulse <onboarding@resend.dev>',
-      to: email,
-      subject: `${code} is your CityPulse verification code`,
-      html: `<div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:40px;background:#0E0E10;color:#F2F0EC;border-radius:16px"><h1 style="color:#E8A83E">CityPulse</h1><p style="color:#A8A5A0">Hi ${name || 'there'},</p><p style="color:#A8A5A0">Your verification code is:</p><div style="background:#222228;border:2px solid #E8A83E;border-radius:12px;padding:24px;text-align:center;margin:24px 0"><span style="font-size:42px;font-weight:800;letter-spacing:12px;color:#E8A83E">${code}</span></div><p style="color:#A8A5A0;font-size:13px">This code expires in 10 minutes.</p></div>`,
+      from: 'noreply@citypulse.ng',
+      to,
+      subject,
+      html
     });
-    console.log('Email sent:', result.data?.id);
-    return true;
+    console.log('✅ Email sent to:', to);
+    return result;
   } catch (err) {
-    console.error('Email error:', err.message);
-    return false;
+    console.error('❌ Email error:', err.message);
+    throw err;
   }
 }
 
-module.exports = { sendVerificationEmail };
+// Email templates
+const templates = {
+  newOrder: (vendorName, customerName, amount, orderId) => `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #FFA500;">🍽️ New Order Received!</h2>
+      <p>Hi ${vendorName},</p>
+      <p>You have a new order!</p>
+      <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+        <p><strong>Customer:</strong> ${customerName}</p>
+        <p><strong>Order ID:</strong> ${orderId.slice(-6)}</p>
+        <p><strong>Amount:</strong> ₦${Number(amount).toLocaleString()}</p>
+      </div>
+      <p><a href="https://citypulse-vendor.netlify.app/#/dashboard" style="background: #FFA500; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">View Order</a></p>
+      <p style="margin-top: 30px; color: #999; font-size: 12px;">CityPulse - Local Food Marketplace</p>
+    </div>
+  `,
+
+  kycApproved: (vendorName, businessName) => `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #28a745;">✅ KYC Verification Approved!</h2>
+      <p>Hi ${vendorName},</p>
+      <p><strong>${businessName}</strong> has been verified and approved!</p>
+      <p>You can now:</p>
+      <ul>
+        <li>Go live on CityPulse</li>
+        <li>Receive customer orders</li>
+        <li>Earn money from food sales</li>
+      </ul>
+      <p><a href="https://citypulse-vendor.netlify.app/#/dashboard" style="background: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">Go to Dashboard</a></p>
+      <p style="margin-top: 30px; color: #999; font-size: 12px;">CityPulse - Local Food Marketplace</p>
+    </div>
+  `,
+
+  venueApproved: (vendorName, venueName) => `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #28a745;">🎉 Venue is Now Live!</h2>
+      <p>Hi ${vendorName},</p>
+      <p><strong>${venueName}</strong> is now visible to all CityPulse customers!</p>
+      <p>Start receiving orders and earn money today! 🚀</p>
+      <p><a href="https://citypulse-vendor.netlify.app/#/dashboard" style="background: #FFA500; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">View Dashboard</a></p>
+      <p style="margin-top: 30px; color: #999; font-size: 12px;">CityPulse - Local Food Marketplace</p>
+    </div>
+  `,
+
+  orderStatus: (customerName, status, orderId) => `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #FFA500;">📦 Order Update</h2>
+      <p>Hi ${customerName},</p>
+      <p>Your order <strong>#${orderId.slice(-6)}</strong> is: <strong>${status.toUpperCase()}</strong></p>
+      <p><a href="https://citypulse.ng/orders" style="background: #FFA500; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">Track Order</a></p>
+      <p style="margin-top: 30px; color: #999; font-size: 12px;">CityPulse - Local Food Marketplace</p>
+    </div>
+  `
+};
+
+module.exports = {
+  sendEmail,
+  templates
+};

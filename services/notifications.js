@@ -1,76 +1,70 @@
 const db = require('../db');
-const admin = require('firebase-admin');
+const { sendEmail, templates } = require('./email');
 
-// Initialize Firebase (if credentials available)
-let firebaseReady = false;
-try {
-  if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_PROJECT_ID) {
-    admin.initializeApp({
-      credential: admin.credential.cert({
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-      }),
-    });
-    firebaseReady = true;
-    console.log('✅ Firebase initialized');
-  } else {
-    console.warn('⚠️ Firebase credentials not configured');
-  }
-} catch (err) {
-  console.warn('Firebase init error:', err.message);
-}
-
-// Send push notification via FCM
-async function sendPush(userId, title, body, data = {}) {
+// Notify vendor: New order (EMAIL)
+async function notifyNewOrder(venueId, orderId, customerName, totalAmount) {
   try {
-    if (!firebaseReady) {
-      console.log('Firebase not ready, skipping push');
-      return;
-    }
-
-    const result = await db.query('SELECT fcm_token FROM users WHERE id=$1', [userId]);
-    const user = result.rows[0];
-    
-    if (!user || !user.fcm_token) {
-      console.log('No FCM token for user:', userId);
-      return;
-    }
-
-    await admin.messaging().send({
-      token: user.fcm_token,
-      notification: { title, body },
-      data,
-      webpush: {
-        notification: { title, body, icon: '/logo.png' }
-      }
-    });
-
-    console.log('✅ Push sent:', userId, title);
-  } catch (err) {
-    console.error('Push error:', err.message);
-  }
-}
-
-// Notify vendor of new order
-async function notifyVendorNewOrder(venueId, orderId, customerName, amount) {
-  try {
-    const vendor = await db.query('SELECT user_id FROM vendors WHERE id=(SELECT vendor_id FROM venues WHERE id=$1)', [venueId]);
-    if (!vendor.rows[0]) return;
-
-    const vendorUserId = vendor.rows[0].user_id;
-    await sendPush(
-      vendorUserId,
-      `🍽️ New Order #${orderId.slice(-6)}`,
-      `${customerName} ordered ₦${Number(amount).toLocaleString()}`,
-      { type: 'new_order', order_id: orderId }
+    const result = await db.query(
+      `SELECT v.id, v.business_name, v.owner_full_name, u.email 
+       FROM vendors v
+       JOIN users u ON v.id = u.id
+       WHERE v.id = (SELECT vendor_id FROM venues WHERE id = $1)`,
+      [venueId]
     );
+    
+    const vendor = result.rows[0];
+    if (!vendor) return;
+
+    const html = templates.newOrder(vendor.owner_full_name, customerName, totalAmount, orderId);
+    await sendEmail(vendor.email, '🍽️ New Order Received!', html);
+    console.log('✅ New order email sent to:', vendor.email);
   } catch (err) {
-    console.error('Vendor notification error:', err.message);
+    console.error('❌ New order notification error:', err.message);
+  }
+}
+
+// Notify vendor: KYC approved
+async function notifyKYCApproved(vendorId) {
+  try {
+    const result = await db.query(
+      'SELECT owner_full_name, business_name, email FROM vendors WHERE id=$1',
+      [vendorId]
+    );
+    const vendor = result.rows[0];
+    if (!vendor) return;
+
+    const html = templates.kycApproved(vendor.owner_full_name, vendor.business_name);
+    await sendEmail(vendor.email, '✅ KYC Verification Approved!', html);
+    console.log('✅ KYC approved email sent to:', vendor.email);
+  } catch (err) {
+    console.error('❌ KYC notification error:', err.message);
+  }
+}
+
+// Notify vendor: Venue approved
+async function notifyVenueApproved(venueId) {
+  try {
+    const result = await db.query(
+      `SELECT v.name, vn.owner_full_name, u.email
+       FROM venues v
+       JOIN vendors vn ON v.vendor_id = vn.id
+       JOIN users u ON vn.id = u.id
+       WHERE v.id = $1`,
+      [venueId]
+    );
+    const venue = result.rows[0];
+    if (!venue) return;
+
+    const html = templates.venueApproved(venue.owner_full_name, venue.name);
+    await sendEmail(venue.email, '🎉 Venue is Now Live!', html);
+    console.log('✅ Venue approved email sent to:', venue.email);
+  } catch (err) {
+    console.error('❌ Venue notification error:', err.message);
   }
 }
 
 module.exports = {
-  sendPush,
-  notifyVendorNewOrder
+  notifyNewOrder,
+  notifyKYCApproved,
+  notifyVenueApproved
 };
