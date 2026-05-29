@@ -1,63 +1,76 @@
-const db = require("../db");
+const db = require('../db');
+const admin = require('firebase-admin');
 
-// Send FCM push notification via Firebase HTTP v1 API
+// Initialize Firebase (if credentials available)
+let firebaseReady = false;
+try {
+  if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_PROJECT_ID) {
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      }),
+    });
+    firebaseReady = true;
+    console.log('✅ Firebase initialized');
+  } else {
+    console.warn('⚠️ Firebase credentials not configured');
+  }
+} catch (err) {
+  console.warn('Firebase init error:', err.message);
+}
+
+// Send push notification via FCM
 async function sendPush(userId, title, body, data = {}) {
   try {
-    const userRes = await db.query("SELECT fcm_token FROM users WHERE id=$1", [userId]);
-    const fcmToken = userRes.rows[0]?.fcm_token;
-    if (!fcmToken) return;
+    if (!firebaseReady) {
+      console.log('Firebase not ready, skipping push');
+      return;
+    }
 
-    // Store in notifications table regardless of FCM success
-    await db.query(
-      `INSERT INTO notifications (user_id, title, body, type, data)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [userId, title, body, data.type || "general", JSON.stringify(data)]
-    );
+    const result = await db.query('SELECT fcm_token FROM users WHERE id=$1', [userId]);
+    const user = result.rows[0];
+    
+    if (!user || !user.fcm_token) {
+      console.log('No FCM token for user:', userId);
+      return;
+    }
 
-    // Only attempt FCM if credentials available
-    if (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_CLIENT_EMAIL) return;
-
-    const axios = require("axios");
-    const jwt   = require("jsonwebtoken");
-
-    // Create service account JWT for FCM
-    const now = Math.floor(Date.now() / 1000);
-    const payload = {
-      iss: process.env.FIREBASE_CLIENT_EMAIL,
-      sub: process.env.FIREBASE_CLIENT_EMAIL,
-      aud: "https://oauth2.googleapis.com/token",
-      iat: now,
-      exp: now + 3600,
-      scope: "https://www.googleapis.com/auth/firebase.messaging",
-    };
-
-    const privateKey = (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
-    if (!privateKey) return;
-
-    const signedJwt = jwt.sign(payload, privateKey, { algorithm: "RS256" });
-
-    // Exchange for access token
-    const tokenRes = await axios.post("https://oauth2.googleapis.com/token", {
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion: signedJwt,
+    await admin.messaging().send({
+      token: user.fcm_token,
+      notification: { title, body },
+      data,
+      webpush: {
+        notification: { title, body, icon: '/logo.png' }
+      }
     });
-    const accessToken = tokenRes.data.access_token;
 
-    // Send FCM message
-    await axios.post(
-      `https://fcm.googleapis.com/v1/projects/${process.env.FIREBASE_PROJECT_ID}/messages:send`,
-      {
-        message: {
-          token: fcmToken,
-          notification: { title, body },
-          data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])),
-        }
-      },
-      { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" } }
-    );
+    console.log('✅ Push sent:', userId, title);
   } catch (err) {
-    console.error("Push notification error:", err.message);
+    console.error('Push error:', err.message);
   }
 }
 
-module.exports = { sendPush };
+// Notify vendor of new order
+async function notifyVendorNewOrder(venueId, orderId, customerName, amount) {
+  try {
+    const vendor = await db.query('SELECT user_id FROM vendors WHERE id=(SELECT vendor_id FROM venues WHERE id=$1)', [venueId]);
+    if (!vendor.rows[0]) return;
+
+    const vendorUserId = vendor.rows[0].user_id;
+    await sendPush(
+      vendorUserId,
+      `🍽️ New Order #${orderId.slice(-6)}`,
+      `${customerName} ordered ₦${Number(amount).toLocaleString()}`,
+      { type: 'new_order', order_id: orderId }
+    );
+  } catch (err) {
+    console.error('Vendor notification error:', err.message);
+  }
+}
+
+module.exports = {
+  sendPush,
+  notifyVendorNewOrder
+};
