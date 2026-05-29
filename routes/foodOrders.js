@@ -28,6 +28,7 @@ router.post("/", async (req, res) => {
     const commissionRate = venue.commission_rate || 25;
     const platformFee    = parseFloat(((subtotal * commissionRate) / 100).toFixed(2));
     const cppEarned      = Math.floor((total_amount / 1000) * (venue.cpp_earn_rate || 10));
+    const verification_pin = Math.floor(100000 + Math.random() * 900000).toString();
 
     // Create the order
     const orderRes = await client.query(
