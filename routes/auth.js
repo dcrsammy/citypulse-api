@@ -1,77 +1,78 @@
-const ADMIN_EMAILS = ['admin@citypulse.ng'];
-const router  = require("express").Router();
-const bcrypt  = require("bcryptjs");
-const jwt     = require("jsonwebtoken");
-const db      = require("../db");
+const express = require('express');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const db = require('../db');
+const router = express.Router();
 
-// POST /api/auth/register — user registration
-router.post("/register", async (req, res) => {
+// POST /api/auth/register
+router.post('/register', async (req, res) => {
   try {
-    const { full_name, email, phone, password, referral_code } = req.body;
-    if (!full_name || !email || !phone || !password)
-      return res.status(400).json({ error: "All fields required." });
-
-    const exists = await db.query(
-      "SELECT id FROM users WHERE email=$1 OR phone=$2", [email, phone]
-    );
-    if (exists.rows.length)
-      return res.status(409).json({ error: "Email or phone already registered." });
-
-    const hash = await bcrypt.hash(password, 12);
-    const refCode = full_name.split(" ")[0].toUpperCase() + Math.floor(Math.random() * 9000 + 1000);
-
-    let referredBy = null;
-    if (referral_code) {
-      const ref = await db.query("SELECT id FROM users WHERE referral_code=$1", [referral_code]);
-      if (ref.rows.length) referredBy = ref.rows[0].id;
-    }
-
+    const { full_name, email, password, phone } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'Email and password required.' });
+    const exists = await db.query('SELECT id FROM users WHERE email=$1', [email.trim().toLowerCase()]);
+    if (exists.rows[0]) return res.status(409).json({ error: 'Email already registered.' });
+    const password_hash = await bcrypt.hash(password, 12);
     const result = await db.query(
-      `INSERT INTO users (full_name, email, phone, password_hash, referral_code, referred_by)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, full_name, email, phone, cpp_points, cpp_tier`,
-      [full_name, email, phone, hash, refCode, referredBy]
+      `INSERT INTO users (full_name, email, phone, password_hash, email_verified) VALUES ($1,$2,$3,$4,false) RETURNING id, email, full_name, phone`,
+      [full_name || null, email.trim().toLowerCase(), phone || null, password_hash]
     );
     const user = result.rows[0];
-
-    // Award referrer 200 CPP
-    if (referredBy) {
-      await db.query("UPDATE users SET cpp_points=cpp_points+200 WHERE id=$1", [referredBy]);
-      await db.query(
-        `INSERT INTO cpp_transactions (user_id,type,amount,description)
-         VALUES ($1,'referral',200,'Referral bonus')`, [referredBy]
-      );
-    }
-
-    const role = ADMIN_EMAILS.includes(user.email) ? "admin" : "user";
-    const token = jwt.sign({ id: user.id, role }, process.env.JWT_SECRET, { expiresIn: "30d" });
+    const token = jwt.sign({ id: user.id, role: 'consumer' }, process.env.JWT_SECRET, { expiresIn: '30d' });
     res.status(201).json({ token, user });
   } catch (err) {
-    console.error("Register error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST /api/auth/login — user login
-router.post("/login", async (req, res) => {
+// POST /api/auth/login
+router.post('/login', async (req, res) => {
   try {
-    const { email, phone, password } = req.body;
-    const identifier = email || phone;
-    if (!identifier || !password)
-      return res.status(400).json({ error: "Credentials required." });
-
-    const result = await db.query(
-      "SELECT * FROM users WHERE email=$1 OR phone=$1", [identifier]
-    );
+    const { email, password } = req.body;
+    const result = await db.query('SELECT * FROM users WHERE email=$1', [email.trim().toLowerCase()]);
     const user = result.rows[0];
-    if (!user || !(await bcrypt.compare(password, user.password_hash)))
-      return res.status(401).json({ error: "Invalid credentials." });
-
-    const role = ADMIN_EMAILS.includes(user.email) ? "admin" : "user";
-    const token = jwt.sign({ id: user.id, role }, process.env.JWT_SECRET, { expiresIn: "30d" });
-    const { password_hash, ...safe } = user;
+    if (!user) return res.status(401).json({ error: 'Invalid credentials.' });
+    const match = await bcrypt.compare(password, user.password_hash);
+    if (!match) return res.status(401).json({ error: 'Invalid credentials.' });
+    const token = jwt.sign({ id: user.id, role: 'consumer' }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    const { password_hash: _, ...safe } = user;
     res.json({ token, user: safe });
   } catch (err) {
-    console.error("Login error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/auth/send-verification
+router.post('/send-verification', require('../middleware/auth'), async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const code = Math.random().toString().slice(2, 8);
+    const expires = new Date(Date.now() + 10 * 60000);
+    await db.query('UPDATE users SET verification_code=$1, verification_expires=$2 WHERE id=$3', [code, expires, userId]);
+    const user = await db.query('SELECT email FROM users WHERE id=$1', [userId]);
+    const sendEmail = require('../services/email');
+    await sendEmail(user.rows[0].email, 'Email Verification', `Your code: ${code}`);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/auth/verify-email
+router.post('/verify-email', require('../middleware/auth'), async (req, res) => {
+  try {
+    const { code } = req.body;
+    const userId = req.user.id;
+    const user = await db.query('SELECT * FROM users WHERE id=$1', [userId]);
+    const userData = user.rows[0];
+    if (!userData.verification_code || userData.verification_code !== code) {
+      return res.status(400).json({ error: 'Invalid code.' });
+    }
+    if (new Date() > userData.verification_expires) {
+      return res.status(400).json({ error: 'Code expired.' });
+    }
+    await db.query('UPDATE users SET email_verified=true, verification_code=NULL WHERE id=$1', [userId]);
+    res.json({ success: true });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -82,12 +83,9 @@ router.post('/vendor/register', async (req, res) => {
     const { business_name, email, phone, password, owner_full_name, cac_number, business_address, owner_bvn } = req.body;
     if (!business_name || !email || !password)
       return res.status(400).json({ error: 'Business name, email and password are required.' });
-
-    const exists = await db.query('SELECT id FROM vendors WHERE email=$1', [email]);
+    const exists = await db.query('SELECT id FROM vendors WHERE email=$1', [email.trim().toLowerCase()]);
     if (exists.rows[0]) return res.status(409).json({ error: 'Email already registered.' });
-
     const password_hash = await bcrypt.hash(password, 12);
-
     const result = await db.query(
       `INSERT INTO vendors (business_name, email, phone, password_hash, is_verified, owner_full_name, cac_number, business_address, owner_bvn, kyc_status, kyc_submitted_at)
        VALUES ($1,$2,$3,$4,false,$5,$6,$7,$8,'pending',NOW()) RETURNING *`,
@@ -101,12 +99,12 @@ router.post('/vendor/register', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-module.exports = router;
+
 // POST /api/auth/vendor/login
 router.post('/vendor/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    const result = await db.query('SELECT * FROM vendors WHERE email=$1', [email]);
+    const result = await db.query('SELECT * FROM vendors WHERE email=$1', [email.trim().toLowerCase()]);
     const vendor = result.rows[0];
     if (!vendor) return res.status(401).json({ error: 'Invalid credentials.' });
     const match = await bcrypt.compare(password, vendor.password_hash);
@@ -119,16 +117,13 @@ router.post('/vendor/login', async (req, res) => {
   }
 });
 
-// PATCH /api/auth/profile - uses auth middleware from server
+// PATCH /api/auth/profile
 router.patch('/profile', require('../middleware/auth'), async (req, res) => {
   try {
     const { full_name, phone } = req.body;
-    const result = await db.query(
-      'UPDATE users SET full_name=$1, phone=$2, updated_at=NOW() WHERE id=$3 RETURNING *',
-      [full_name, phone || null, req.user.id]
-    );
+    const result = await db.query('UPDATE users SET full_name=$1, phone=$2 WHERE id=$3 RETURNING *', [full_name, phone, req.user.id]);
     const { password_hash: _, ...safe } = result.rows[0];
-    res.json({ user: safe });
+    res.json(safe);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -137,62 +132,12 @@ router.patch('/profile', require('../middleware/auth'), async (req, res) => {
 // GET /api/auth/me
 router.get('/me', require('../middleware/auth'), async (req, res) => {
   try {
-    if (req.user.role === 'vendor') {
-      const result = await db.query('SELECT * FROM vendors WHERE id=$1', [req.user.id]);
-      const { password_hash: _, ...safe } = result.rows[0];
-      return res.json({ ...safe, role: 'vendor' });
-    }
     const result = await db.query('SELECT * FROM users WHERE id=$1', [req.user.id]);
     const { password_hash: _, ...safe } = result.rows[0];
-    res.json({ ...safe, role: req.user.role });
+    res.json(safe);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST /api/auth/send-verification — send OTP email
-router.post('/send-verification', require('../middleware/auth'), async (req, res) => {
-  try {
-    const { sendVerificationEmail } = require('../services/email');
-    const code    = Math.floor(100000 + Math.random() * 900000).toString();
-    const expires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-    const userRes = await db.query('SELECT * FROM users WHERE id=$1', [req.user.id]);
-    const user    = userRes.rows[0];
-    if (!user) return res.status(404).json({ error: 'User not found.' });
-    if (user.email_verified) return res.json({ message: 'Email already verified.' });
-
-    await db.query(
-      'UPDATE users SET verification_code=$1, verification_expires=$2 WHERE id=$3',
-      [code, expires, req.user.id]
-    );
-
-    await sendVerificationEmail(user.email, code, user.full_name);
-    res.json({ message: 'Verification code sent to ' + user.email });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/auth/verify-email — verify OTP code
-router.post('/verify-email', require('../middleware/auth'), async (req, res) => {
-  try {
-    const { code } = req.body;
-    const userRes  = await db.query('SELECT * FROM users WHERE id=$1', [req.user.id]);
-    const user     = userRes.rows[0];
-
-    if (user.email_verified) return res.json({ message: 'Already verified.' });
-    if (!user.verification_code) return res.status(400).json({ error: 'No code sent. Request a new one.' });
-    if (new Date() > new Date(user.verification_expires)) return res.status(400).json({ error: 'Code expired. Request a new one.' });
-    if (user.verification_code !== code) return res.status(400).json({ error: 'Incorrect code. Try again.' });
-
-    await db.query(
-      'UPDATE users SET email_verified=true, verification_code=NULL, verification_expires=NULL WHERE id=$1',
-      [req.user.id]
-    );
-    res.json({ message: 'Email verified successfully!', verified: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 module.exports = router;
