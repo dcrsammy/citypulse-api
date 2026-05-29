@@ -1,134 +1,78 @@
 const router = require("express").Router();
 const db = require("../db");
 const auth = require("../middleware/auth");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 
-const adminAuth = (req, res, next) => {
-  if (req.user?.role !== "admin") return res.status(403).json({ error: "Admin access only." });
-  next();
-};
-router.use(auth, adminAuth);
-
-// GET /api/admin/stats
-router.get("/stats", async (req, res) => {
+// POST /api/admin/login - Public endpoint
+router.post("/login", async (req, res) => {
   try {
-    const stats = await db.query(`
-      SELECT
-        (SELECT COUNT(*) FROM users) as total_users,
-        (SELECT COUNT(*) FROM users WHERE created_at >= NOW() - INTERVAL '7 days') as new_users_week,
-        (SELECT COUNT(*) FROM vendors WHERE is_verified=true) as active_vendors,
-        (SELECT COUNT(*) FROM venues WHERE is_live=true) as live_venues,
-        (SELECT COUNT(*) FROM events WHERE is_live=true AND event_date >= CURRENT_DATE) as upcoming_events,
-        (SELECT COUNT(*) FROM bookings WHERE status='confirmed') as total_bookings,
-        (SELECT SUM(total_amount) FROM bookings WHERE status='confirmed') as total_gmv,
-        (SELECT COUNT(*) FROM bookings WHERE created_at >= NOW() - INTERVAL '24 hours') as bookings_today
-    `);
-    res.json(stats.rows[0]);
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: "Email and password required." });
+    
+    const result = await db.query("SELECT * FROM admins WHERE email=$1", [email.toLowerCase().trim()]);
+    const admin = result.rows[0];
+    if (!admin) return res.status(401).json({ error: "Invalid credentials." });
+    
+    const match = await bcrypt.compare(password, admin.password_hash);
+    if (!match) return res.status(401).json({ error: "Invalid credentials." });
+    
+    const token = jwt.sign({ id: admin.id, role: "admin" }, process.env.JWT_SECRET, { expiresIn: "30d" });
+    res.json({ token, admin: { id: admin.id, email: admin.email, name: admin.name } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/admin/vendors
-router.get("/vendors", async (req, res) => {
+// Middleware: Check admin role
+const adminAuth = (req, res, next) => {
+  if (req.user?.role !== "admin") return res.status(403).json({ error: "Admin access only." });
+  next();
+};
+
+router.use(auth, adminAuth);
+
+// GET /api/admin/stats
+router.get("/stats", async (req, res) => {
   try {
-    const result = await db.query(
-      `SELECT vn.*, COUNT(v.id) as venue_count FROM vendors vn
-       LEFT JOIN venues v ON v.vendor_id=vn.id
-       GROUP BY vn.id ORDER BY vn.created_at DESC`
-    );
+    const pending = await db.query("SELECT COUNT(*) as count FROM venues WHERE is_live=false");
+    const kyc = await db.query("SELECT COUNT(*) as count FROM vendors WHERE kyc_status='pending'");
+    const stats = await db.query(`
+      SELECT
+        (SELECT COUNT(*) FROM users) as total_users,
+        (SELECT COUNT(*) FROM vendors WHERE is_verified=true) as active_vendors,
+        (SELECT COUNT(*) FROM venues WHERE is_live=true) as live_venues
+    `);
+    res.json({
+      total_users: stats.rows[0].total_users,
+      active_vendors: stats.rows[0].active_vendors,
+      live_venues: stats.rows[0].live_venues,
+      pending_approval: pending.rows[0].count,
+      kyc_pending: kyc.rows[0].count
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/vendors/pending-kyc
+router.get("/vendors/pending-kyc", async (req, res) => {
+  try {
+    const result = await db.query("SELECT * FROM vendors WHERE kyc_status='pending' ORDER BY kyc_submitted_at DESC");
     res.json({ vendors: result.rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// PATCH /api/admin/vendors/:id/verify
-router.patch("/vendors/:id/verify", async (req, res) => {
-  try {
-    await db.query("UPDATE vendors SET is_verified=true WHERE id=$1", [req.params.id]);
-    res.json({ success: true, message: "Vendor verified successfully." });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET /api/admin/venues
-router.get("/venues", async (req, res) => {
-  try {
-    const result = await db.query(
-      `SELECT v.*, vn.business_name FROM venues v
-       JOIN vendors vn ON v.vendor_id=vn.id
-       ORDER BY v.created_at DESC`
-    );
-    res.json({ venues: result.rows });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// PATCH /api/admin/venues/:id/toggle
-router.patch("/venues/:id/toggle", async (req, res) => {
-  try {
-    const result = await db.query(
-      `UPDATE venues SET is_live=NOT is_live WHERE id=$1 RETURNING is_live, name`,
-      [req.params.id]
-    );
-    const { is_live, name } = result.rows[0];
-    res.json({ success: true, is_live, message: `${name} is now ${is_live ? "live" : "offline"}` });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET /api/admin/events/pending
-router.get("/events/pending", async (req, res) => {
-  try {
-    const result = await db.query(
-      `SELECT e.*, v.name as venue_name FROM events e
-       JOIN venues v ON e.venue_id=v.id
-       WHERE e.is_live=false ORDER BY e.created_at DESC`
-    );
-    res.json({ events: result.rows });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// PATCH /api/admin/events/:id/approve
-router.patch("/events/:id/approve", async (req, res) => {
-  try {
-    await db.query("UPDATE events SET is_live=true WHERE id=$1", [req.params.id]);
-    res.json({ success: true, message: "Event is now live." });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET /api/admin/users
-router.get("/users", async (req, res) => {
-  try {
-    const { search, limit = 50, offset = 0 } = req.query;
-    let query = `SELECT id,full_name,email,phone,cpp_points,cpp_tier,wallet_balance,created_at FROM users WHERE is_active=true`;
-    const params = [];
-    if (search) { query += ` AND (full_name ILIKE $1 OR email ILIKE $1 OR phone ILIKE $1)`; params.push(`%${search}%`); }
-    query += ` ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`;
-    const result = await db.query(query, params);
-    res.json({ users: result.rows });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-module.exports = router;
-// GET /api/admin/venues/pending — venues awaiting approval
+// GET /api/admin/venues/pending
 router.get("/venues/pending", async (req, res) => {
   try {
-    const result = await db.query(
-      `SELECT v.*, vn.business_name as vendor_name, vn.email as vendor_email, vn.phone as vendor_phone
-       FROM venues v JOIN vendors vn ON v.vendor_id = vn.id
-       WHERE v.is_live = false
-       ORDER BY v.created_at DESC`
-    );
+    const result = await db.query(`
+      SELECT v.*, vn.business_name as vendor_name FROM venues v
+      LEFT JOIN vendors vn ON v.vendor_id=vn.id
+      WHERE v.is_live=false ORDER BY v.created_at DESC
+    `);
     res.json({ venues: result.rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -138,11 +82,8 @@ router.get("/venues/pending", async (req, res) => {
 // PATCH /api/admin/venues/:id/approve
 router.patch("/venues/:id/approve", async (req, res) => {
   try {
-    const result = await db.query(
-      "UPDATE venues SET is_live=true, updated_at=NOW() WHERE id=$1 RETURNING name",
-      [req.params.id]
-    );
-    res.json({ message: `${result.rows[0]?.name} is now live.` });
+    await db.query("UPDATE venues SET is_live=true WHERE id=$1", [req.params.id]);
+    res.json({ message: "Venue approved!" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -152,88 +93,249 @@ router.patch("/venues/:id/approve", async (req, res) => {
 router.patch("/venues/:id/reject", async (req, res) => {
   try {
     await db.query("DELETE FROM venues WHERE id=$1", [req.params.id]);
-    res.json({ message: "Venue rejected and removed." });
+    res.json({ message: "Venue rejected." });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/admin/users — all users
+// GET /api/admin/vendors
+router.get("/vendors", async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT vn.*, COUNT(v.id) as venue_count FROM vendors vn
+      LEFT JOIN venues v ON v.vendor_id=vn.id
+      GROUP BY vn.id ORDER BY vn.created_at DESC
+    `);
+    res.json({ vendors: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/admin/vendors/:id/kyc-approve
+router.patch("/vendors/:id/kyc-approve", async (req, res) => {
+  try {
+    await db.query("UPDATE vendors SET kyc_status='approved' WHERE id=$1", [req.params.id]);
+    res.json({ message: "KYC approved!" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/admin/vendors/:id/kyc-reject
+router.patch("/vendors/:id/kyc-reject", async (req, res) => {
+  try {
+    await db.query("UPDATE vendors SET kyc_status='rejected' WHERE id=$1", [req.params.id]);
+    res.json({ message: "KYC rejected." });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/venues
+router.get("/venues", async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT v.*, vn.business_name as vendor_name FROM venues v
+      LEFT JOIN vendors vn ON v.vendor_id=vn.id
+      ORDER BY v.created_at DESC
+    `);
+    res.json({ venues: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/users
 router.get("/users", async (req, res) => {
   try {
-    const result = await db.query(
-      "SELECT id, full_name, email, phone, cpp_tier, cpp_points, wallet_balance, created_at, is_active FROM users ORDER BY created_at DESC LIMIT 100"
-    );
+    const result = await db.query("SELECT * FROM users ORDER BY created_at DESC");
     res.json({ users: result.rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/admin/vendors — all vendors
+// GET /api/admin/disputes
+router.get("/disputes", async (req, res) => {
+  try {
+    const result = await db.query("SELECT * FROM food_orders WHERE disputed=true ORDER BY created_at DESC");
+    res.json({ disputes: result.rows || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;
+EOFcat > routes/admin.js << 'EOF'
+const router = require("express").Router();
+const db = require("../db");
+const auth = require("../middleware/auth");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+
+// POST /api/admin/login - Public endpoint
+router.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: "Email and password required." });
+    
+    const result = await db.query("SELECT * FROM admins WHERE email=$1", [email.toLowerCase().trim()]);
+    const admin = result.rows[0];
+    if (!admin) return res.status(401).json({ error: "Invalid credentials." });
+    
+    const match = await bcrypt.compare(password, admin.password_hash);
+    if (!match) return res.status(401).json({ error: "Invalid credentials." });
+    
+    const token = jwt.sign({ id: admin.id, role: "admin" }, process.env.JWT_SECRET, { expiresIn: "30d" });
+    res.json({ token, admin: { id: admin.id, email: admin.email, name: admin.name } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Middleware: Check admin role
+const adminAuth = (req, res, next) => {
+  if (req.user?.role !== "admin") return res.status(403).json({ error: "Admin access only." });
+  next();
+};
+
+router.use(auth, adminAuth);
+
+// GET /api/admin/stats
+router.get("/stats", async (req, res) => {
+  try {
+    const pending = await db.query("SELECT COUNT(*) as count FROM venues WHERE is_live=false");
+    const kyc = await db.query("SELECT COUNT(*) as count FROM vendors WHERE kyc_status='pending'");
+    const stats = await db.query(`
+      SELECT
+        (SELECT COUNT(*) FROM users) as total_users,
+        (SELECT COUNT(*) FROM vendors WHERE is_verified=true) as active_vendors,
+        (SELECT COUNT(*) FROM venues WHERE is_live=true) as live_venues
+    `);
+    res.json({
+      total_users: stats.rows[0].total_users,
+      active_vendors: stats.rows[0].active_vendors,
+      live_venues: stats.rows[0].live_venues,
+      pending_approval: pending.rows[0].count,
+      kyc_pending: kyc.rows[0].count
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/vendors/pending-kyc
+router.get("/vendors/pending-kyc", async (req, res) => {
+  try {
+    const result = await db.query("SELECT * FROM vendors WHERE kyc_status='pending' ORDER BY kyc_submitted_at DESC");
+    res.json({ vendors: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/venues/pending
+router.get("/venues/pending", async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT v.*, vn.business_name as vendor_name FROM venues v
+      LEFT JOIN vendors vn ON v.vendor_id=vn.id
+      WHERE v.is_live=false ORDER BY v.created_at DESC
+    `);
+    res.json({ venues: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/admin/venues/:id/approve
+router.patch("/venues/:id/approve", async (req, res) => {
+  try {
+    await db.query("UPDATE venues SET is_live=true WHERE id=$1", [req.params.id]);
+    res.json({ message: "Venue approved!" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/admin/venues/:id/reject
+router.patch("/venues/:id/reject", async (req, res) => {
+  try {
+    await db.query("DELETE FROM venues WHERE id=$1", [req.params.id]);
+    res.json({ message: "Venue rejected." });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/vendors
 router.get("/vendors", async (req, res) => {
   try {
-    const result = await db.query(
-      `SELECT vn.*, COUNT(v.id) as venue_count
-       FROM vendors vn LEFT JOIN venues v ON v.vendor_id = vn.id
-       GROUP BY vn.id ORDER BY vn.created_at DESC`
-    );
+    const result = await db.query(`
+      SELECT vn.*, COUNT(v.id) as venue_count FROM vendors vn
+      LEFT JOIN venues v ON v.vendor_id=vn.id
+      GROUP BY vn.id ORDER BY vn.created_at DESC
+    `);
     res.json({ vendors: result.rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// PATCH /api/admin/vendors/:id/verify
-router.patch("/vendors/:id/verify", async (req, res) => {
+// PATCH /api/admin/vendors/:id/kyc-approve
+router.patch("/vendors/:id/kyc-approve", async (req, res) => {
   try {
-    await db.query("UPDATE vendors SET is_verified=true WHERE id=$1", [req.params.id]);
-    res.json({ message: "Vendor verified." });
+    await db.query("UPDATE vendors SET kyc_status='approved' WHERE id=$1", [req.params.id]);
+    res.json({ message: "KYC approved!" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/admin/kyc — vendors with pending KYC
-router.get("/kyc", async (req, res) => {
+// PATCH /api/admin/vendors/:id/kyc-reject
+router.patch("/vendors/:id/kyc-reject", async (req, res) => {
   try {
-    const result = await db.query(
-      `SELECT id, business_name, email, phone, owner_full_name, 
-              cac_number, business_address, owner_bvn, kyc_status, 
-              kyc_submitted_at, created_at
-       FROM vendors 
-       WHERE kyc_status = 'pending'
-       ORDER BY kyc_submitted_at ASC`
-    );
-    res.json({ vendors: result.rows });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// PATCH /api/admin/kyc/:id/approve
-router.patch("/kyc/:id/approve", async (req, res) => {
-  try {
-    await db.query(
-      `UPDATE vendors SET kyc_status='approved', is_verified=true, kyc_reviewed_at=NOW() WHERE id=$1`,
-      [req.params.id]
-    );
-    res.json({ message: "KYC approved. Vendor is now verified." });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// PATCH /api/admin/kyc/:id/reject
-router.patch("/kyc/:id/reject", async (req, res) => {
-  try {
-    const { reason } = req.body;
-    await db.query(
-      `UPDATE vendors SET kyc_status='rejected', kyc_reviewed_at=NOW(), kyc_reject_reason=$1 WHERE id=$2`,
-      [reason || 'Documents not valid', req.params.id]
-    );
+    await db.query("UPDATE vendors SET kyc_status='rejected' WHERE id=$1", [req.params.id]);
     res.json({ message: "KYC rejected." });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
+// GET /api/admin/venues
+router.get("/venues", async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT v.*, vn.business_name as vendor_name FROM venues v
+      LEFT JOIN vendors vn ON v.vendor_id=vn.id
+      ORDER BY v.created_at DESC
+    `);
+    res.json({ venues: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/users
+router.get("/users", async (req, res) => {
+  try {
+    const result = await db.query("SELECT * FROM users ORDER BY created_at DESC");
+    res.json({ users: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/disputes
+router.get("/disputes", async (req, res) => {
+  try {
+    const result = await db.query("SELECT * FROM food_orders WHERE disputed=true ORDER BY created_at DESC");
+    res.json({ disputes: result.rows || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;
