@@ -179,3 +179,67 @@ router.post('/topup/confirm', auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// POST /api/payments/verify-account — verify bank account name
+router.post('/verify-account', auth, async (req, res) => {
+  try {
+    const { account_number, bank_code } = req.body;
+    const response = await axios.get(
+      `https://api.paystack.co/bank/resolve?account_number=${account_number}&bank_code=${bank_code}`,
+      { headers }
+    );
+    res.json({ account_name: response.data.data.account_name });
+  } catch (err) {
+    res.status(400).json({ error: 'Could not verify account. Check details and try again.' });
+  }
+});
+
+// POST /api/payments/withdraw — consumer wallet withdrawal
+router.post('/withdraw', auth, async (req, res) => {
+  try {
+    const { amount, bank_code, account_number, account_name } = req.body;
+    if (!amount || amount < 500) return res.status(400).json({ error: 'Minimum withdrawal is ₦500.' });
+
+    const userRes = await db.query('SELECT * FROM users WHERE id=$1', [req.user.id]);
+    const user    = userRes.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+    if (parseFloat(user.wallet_balance) < amount) return res.status(400).json({ error: 'Insufficient wallet balance.' });
+
+    // Create transfer recipient
+    const recipientRes = await axios.post(
+      'https://api.paystack.co/transferrecipient',
+      { type: 'nuban', name: account_name, account_number, bank_code, currency: 'NGN' },
+      { headers }
+    );
+    const recipient_code = recipientRes.data.data.recipient_code;
+
+    // Initiate transfer
+    const transferRes = await axios.post(
+      'https://api.paystack.co/transfer',
+      {
+        source:    'balance',
+        amount:    Math.round(amount * 100),
+        recipient: recipient_code,
+        reason:    'CityPulse wallet withdrawal',
+      },
+      { headers }
+    );
+
+    if (transferRes.data.data.status === 'success' || transferRes.data.data.status === 'pending') {
+      await db.query(
+        'UPDATE users SET wallet_balance = wallet_balance - $1 WHERE id=$2',
+        [amount, req.user.id]
+      );
+      const updated = await db.query('SELECT wallet_balance FROM users WHERE id=$1', [req.user.id]);
+      res.json({
+        message:         `₦${Number(amount).toLocaleString()} withdrawal initiated. Arrives in 1-2 minutes.`,
+        wallet_balance:  updated.rows[0].wallet_balance,
+        transfer_status: transferRes.data.data.status,
+      });
+    } else {
+      res.status(400).json({ error: 'Transfer failed. Try again.' });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.response?.data?.message || err.message });
+  }
+});
