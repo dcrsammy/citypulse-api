@@ -130,7 +130,7 @@ router.patch("/venue/:id", auth, async (req, res) => {
     const { cover_image, price_range, description, images, slideshow_interval } = req.body;
     const result = await db.query(
       "UPDATE venues SET cover_image = COALESCE($1, cover_image), price_range = COALESCE($2, price_range), description = COALESCE($3, description), images = COALESCE($4, images), slideshow_interval = COALESCE($5, slideshow_interval) WHERE id=$6 AND vendor_id=$7 RETURNING *",
-      [cover_image, price_range, description, images ? JSON.stringify(images) : null, slideshow_interval, req.params.id, req.user.id]
+      [cover_image, price_range, description, images || null, slideshow_interval, req.params.id, req.user.id]
     );
     if (!result.rows[0]) return res.status(404).json({ error: "Venue not found" });
     res.json({ venue: result.rows[0] });
