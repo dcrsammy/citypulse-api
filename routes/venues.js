@@ -2,11 +2,23 @@ const router = require("express").Router();
 const db = require("../db");
 const auth = require("../middleware/auth");
 
+// GET /api/venues/saved/list - MUST be before /:id routes
+router.get("/saved/list", auth, async (req, res) => {
+  try {
+    const result = await db.query(
+      "SELECT v.* FROM venues v JOIN saved_venues sv ON v.id = sv.venue_id WHERE sv.user_id=$1 ORDER BY sv.created_at DESC",
+      [req.user.id]
+    );
+    res.json({ venues: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/venues - Public: List venues with search, filter, sort
 router.get("/", async (req, res) => {
   try {
     const { search, category, price_range, sort, city, limit = 30 } = req.query;
-
     let query = `SELECT * FROM venues WHERE is_live = true`;
     const params = [];
     let paramCount = 0;
@@ -16,37 +28,25 @@ router.get("/", async (req, res) => {
       query += ` AND LOWER(city) = LOWER($${paramCount})`;
       params.push(city);
     }
-
     if (category && category !== 'all') {
       paramCount++;
       query += ` AND category = $${paramCount}`;
       params.push(category);
     }
-
     if (price_range) {
       paramCount++;
       query += ` AND price_range = $${paramCount}`;
       params.push(parseInt(price_range));
     }
-
     if (search) {
       paramCount++;
-      query += ` AND (
-        LOWER(name) LIKE LOWER($${paramCount}) OR 
-        LOWER(description) LIKE LOWER($${paramCount}) OR
-        LOWER(address) LIKE LOWER($${paramCount}) OR
-        LOWER(neighbourhood) LIKE LOWER($${paramCount})
-      )`;
+      query += ` AND (LOWER(name) LIKE LOWER($${paramCount}) OR LOWER(description) LIKE LOWER($${paramCount}) OR LOWER(address) LIKE LOWER($${paramCount}) OR LOWER(neighbourhood) LIKE LOWER($${paramCount}))`;
       params.push(`%${search}%`);
     }
 
-    if (sort === 'newest') {
-      query += ` ORDER BY created_at DESC`;
-    } else if (sort === 'price_asc') {
-      query += ` ORDER BY price_range ASC`;
-    } else {
-      query += ` ORDER BY avg_rating DESC`;
-    }
+    if (sort === 'newest') query += ` ORDER BY created_at DESC`;
+    else if (sort === 'price_asc') query += ` ORDER BY price_range ASC`;
+    else query += ` ORDER BY avg_rating DESC`;
 
     paramCount++;
     query += ` LIMIT $${paramCount}`;
@@ -55,7 +55,6 @@ router.get("/", async (req, res) => {
     const result = await db.query(query, params);
     res.json({ venues: result.rows });
   } catch (err) {
-    console.error("Error fetching venues:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -65,52 +64,6 @@ router.get("/:id", async (req, res) => {
   try {
     const result = await db.query("SELECT * FROM venues WHERE id=$1", [req.params.id]);
     res.json(result.rows[0] || {});
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// PATCH /api/venues/:id
-router.patch("/:id", auth, async (req, res) => {
-  try {
-    const { is_open } = req.body;
-    const result = await db.query(
-      "UPDATE venues SET is_open=$1 WHERE id=$2 RETURNING *",
-      [is_open, req.params.id]
-    );
-    res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/venues/:id/save - Toggle save/unsave venue
-router.post("/:id/save", auth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user.id;
-
-    // Check if already saved
-    const existing = await db.query(
-      "SELECT id FROM saved_venues WHERE user_id=$1 AND venue_id=$2",
-      [userId, id]
-    );
-
-    if (existing.rows[0]) {
-      // Unsave
-      await db.query(
-        "DELETE FROM saved_venues WHERE user_id=$1 AND venue_id=$2",
-        [userId, id]
-      );
-      res.json({ saved: false });
-    } else {
-      // Save
-      await db.query(
-        "INSERT INTO saved_venues (user_id, venue_id) VALUES ($1, $2)",
-        [userId, id]
-      );
-      res.json({ saved: true });
-    }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -129,14 +82,34 @@ router.get("/:id/saved", auth, async (req, res) => {
   }
 });
 
-// GET /api/venues/saved/list - Get all saved venues for user
-router.get("/saved/list", auth, async (req, res) => {
+// POST /api/venues/:id/save - Toggle save/unsave
+router.post("/:id/save", auth, async (req, res) => {
   try {
-    const result = await db.query(
-      "SELECT v.* FROM venues v JOIN saved_venues sv ON v.id = sv.venue_id WHERE sv.user_id=$1 ORDER BY sv.created_at DESC",
-      [req.user.id]
+    const existing = await db.query(
+      "SELECT id FROM saved_venues WHERE user_id=$1 AND venue_id=$2",
+      [req.user.id, req.params.id]
     );
-    res.json({ venues: result.rows });
+    if (existing.rows[0]) {
+      await db.query("DELETE FROM saved_venues WHERE user_id=$1 AND venue_id=$2", [req.user.id, req.params.id]);
+      res.json({ saved: false });
+    } else {
+      await db.query("INSERT INTO saved_venues (user_id, venue_id) VALUES ($1, $2)", [req.user.id, req.params.id]);
+      res.json({ saved: true });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/venues/:id
+router.patch("/:id", auth, async (req, res) => {
+  try {
+    const { is_open } = req.body;
+    const result = await db.query(
+      "UPDATE venues SET is_open=$1 WHERE id=$2 RETURNING *",
+      [is_open, req.params.id]
+    );
+    res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
