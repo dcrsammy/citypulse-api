@@ -122,7 +122,7 @@ router.get("/venues", auth, async (req, res) => {
   }
 });
 
-module.exports = router;
+
 
 // PATCH /api/vendor/venue/:id - Update venue (vendor auth)
 router.patch("/venue/:id", auth, async (req, res) => {
@@ -138,3 +138,26 @@ router.patch("/venue/:id", auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// POST /api/vendor/venues - Create new venue
+router.post("/venues", auth, async (req, res) => {
+  try {
+    const { name, description, address, neighbourhood, city, phone, price_range, category, venue_type, accepts_dinein, accepts_pickup, accepts_delivery, avg_prep_time_mins } = req.body;
+    
+    if (!name || !address) return res.status(400).json({ error: "Name and address are required" });
+
+    // Generate slug
+    const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-') + '-' + Math.random().toString(36).substring(2, 7);
+
+    const result = await db.query(
+      "INSERT INTO venues (vendor_id, name, slug, description, address, neighbourhood, city, phone, price_range, category, venue_type, accepts_dinein, accepts_pickup, accepts_delivery, avg_prep_time_mins, is_live, is_verified) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,false,false) RETURNING *",
+      [req.user.id, name, slug, description || null, address, neighbourhood || null, city || 'Lagos', phone || null, price_range || 2, category || 'restaurant', venue_type || 'restaurant', accepts_dinein ?? true, accepts_pickup ?? true, accepts_delivery ?? false, avg_prep_time_mins || 20]
+    );
+
+    res.status(201).json({ venue: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;
