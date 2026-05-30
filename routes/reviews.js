@@ -2,43 +2,29 @@ const router = require("express").Router();
 const db = require("../db");
 const auth = require("../middleware/auth");
 
-// POST /api/reviews
-router.post("/", auth, async (req, res) => {
+// GET /api/reviews?venue_id=xxx
+router.get("/", async (req, res) => {
   try {
-    const { venue_id, booking_id, rating, atmosphere_rating, service_rating, value_rating, review_text, tags } = req.body;
-    if (!venue_id || !rating) return res.status(400).json({ error: "venue_id and rating required." });
-
+    const { venue_id } = req.query;
     const result = await db.query(
-      `INSERT INTO reviews (user_id,venue_id,booking_id,rating,atmosphere_rating,service_rating,value_rating,review_text,tags)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [req.user.id, venue_id, booking_id || null, rating, atmosphere_rating || null, service_rating || null, value_rating || null, review_text || null, tags || []]
+      "SELECT r.*, u.full_name FROM reviews r LEFT JOIN users u ON r.user_id = u.id WHERE r.venue_id=$1 ORDER BY r.created_at DESC",
+      [venue_id]
     );
-
-    await db.query("UPDATE users SET cpp_points=cpp_points+50 WHERE id=$1", [req.user.id]);
-    await db.query(
-      `UPDATE venues SET
-         avg_rating=(SELECT AVG(rating) FROM reviews WHERE venue_id=$1 AND is_approved=true),
-         review_count=(SELECT COUNT(*) FROM reviews WHERE venue_id=$1 AND is_approved=true)
-       WHERE id=$1`, [venue_id]
-    );
-
-    res.status(201).json({ review: result.rows[0], cpp_earned: 50 });
+    res.json({ reviews: result.rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/reviews/venue/:id
-router.get("/venue/:id", async (req, res) => {
+// POST /api/reviews/:id/reply - Reply to review
+router.post("/:id/reply", auth, async (req, res) => {
   try {
+    const { reply_text } = req.body;
     const result = await db.query(
-      `SELECT r.*, u.full_name, u.avatar_url
-       FROM reviews r JOIN users u ON r.user_id=u.id
-       WHERE r.venue_id=$1 AND r.is_approved=true
-       ORDER BY r.created_at DESC LIMIT 20`,
-      [req.params.id]
+      "UPDATE reviews SET vendor_reply=$1, vendor_reply_at=NOW() WHERE id=$2 RETURNING *",
+      [reply_text, req.params.id]
     );
-    res.json({ reviews: result.rows });
+    res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

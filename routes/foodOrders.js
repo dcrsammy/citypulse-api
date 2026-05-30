@@ -213,3 +213,22 @@ router.patch("/:id/reject", async (req, res) => {
 });
 
 module.exports = router;
+
+// PATCH /api/food-orders/:id/status - Update order status
+router.patch("/:id/status", async (req, res) => {
+  try {
+    const { status } = req.body;
+    const allowed = ['confirmed', 'preparing', 'ready', 'completed', 'cancelled'];
+    if (!allowed.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+
+    const result = await db.query(
+      "UPDATE food_orders SET order_status=$1 WHERE id=$2 RETURNING *",
+      [status, req.params.id]
+    );
+    res.json({ order: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;
