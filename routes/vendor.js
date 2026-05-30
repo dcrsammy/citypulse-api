@@ -1,6 +1,53 @@
 const router = require("express").Router();
 const db = require("../db");
 const auth = require("../middleware/auth");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+
+// POST /api/vendor/login
+router.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email and password required" });
+    }
+
+    const result = await db.query(
+      "SELECT id, email, password_hash, business_name, kyc_status FROM vendors WHERE email=$1",
+      [email]
+    );
+
+    if (!result.rows[0]) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    const vendor = result.rows[0];
+    const isValid = await bcrypt.compare(password, vendor.password_hash);
+
+    if (!isValid) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    const token = jwt.sign(
+      { id: vendor.id, email: vendor.email, role: "vendor" },
+      process.env.JWT_SECRET || "default_secret",
+      { expiresIn: "30d" }
+    );
+
+    res.json({
+      token,
+      vendor: {
+        id: vendor.id,
+        email: vendor.email,
+        business_name: vendor.business_name,
+        kyc_status: vendor.kyc_status
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // GET /api/vendor/me - Get current vendor's profile
 router.get("/me", auth, async (req, res) => {
@@ -13,14 +60,11 @@ router.get("/me", auth, async (req, res) => {
     if (!result.rows[0]) {
       return res.status(404).json({ error: "Vendor not found" });
     }
-
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-
-module.exports = router;
 
 // GET /api/vendor/orders - Get vendor's orders
 router.get("/orders", auth, async (req, res) => {
@@ -36,7 +80,6 @@ router.get("/orders", auth, async (req, res) => {
     if (venueIds.length === 0) {
       return res.json({ orders: [] });
     }
-
     // Get orders for those venues
     const result = await db.query(
       `SELECT fo.id, fo.user_id, fo.total_amount, fo.order_status, fo.created_at, u.full_name
@@ -46,7 +89,6 @@ router.get("/orders", auth, async (req, res) => {
        ORDER BY fo.created_at DESC`,
       [venueIds]
     );
-
     res.json({ orders: result.rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
