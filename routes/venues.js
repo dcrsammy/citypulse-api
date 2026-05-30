@@ -2,8 +2,8 @@ const router = require("express").Router();
 const db = require("../db");
 const auth = require("../middleware/auth");
 
-// GET /api/venues/browse - Public: List all active restaurants for customers
-router.get("/browse/all", async (req, res) => {
+// GET /api/venues - Public: List all active restaurants for customers
+router.get("/", async (req, res) => {
   try {
     const result = await db.query(
       `SELECT id, name, category, cover_image, address, latitude, longitude, 
@@ -18,8 +18,8 @@ router.get("/browse/all", async (req, res) => {
   }
 });
 
-// GET /api/venues - Get vendor's venues (requires auth)
-router.get("/", auth, async (req, res) => {
+// GET /api/vendor/venues - Get vendor's venues (requires auth)
+router.get("/vendor/venues", auth, async (req, res) => {
   try {
     const result = await db.query(
       "SELECT * FROM venues WHERE vendor_id=$1",
@@ -31,10 +31,13 @@ router.get("/", auth, async (req, res) => {
   }
 });
 
-// GET /api/venues/:id - Get single venue
+// GET /api/venues/:id - Get single venue details
 router.get("/:id", async (req, res) => {
   try {
-    const result = await db.query("SELECT * FROM venues WHERE id=$1", [req.params.id]);
+    const result = await db.query(
+      `SELECT * FROM venues WHERE id=$1 AND is_live = true`,
+      [req.params.id]
+    );
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
