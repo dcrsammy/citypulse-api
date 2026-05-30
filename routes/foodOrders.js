@@ -150,6 +150,75 @@ router.patch("/:id/status", async (req, res) => {
   }
 });
 
+
+// POST /api/food-orders/:id/cancel - Cancel order with refund
+router.post('/:id/cancel', auth, async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    // Get the order
+    const orderRes = await client.query(
+      'SELECT * FROM food_orders WHERE id=$1 AND user_id=$2',
+      [req.params.id, req.user.id]
+    );
+    
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    
+    const order = orderRes.rows[0];
+    
+    // Only allow cancellation if pending or confirmed
+      return res.status(400).json({ 
+        error: 'Cannot cancel order that is already being prepared or completed' 
+      });
+    }
+    
+    // Cancel the order
+    await client.query(
+      'UPDATE food_orders SET order_status=$1, updated_at=NOW() WHERE id=$2',
+      ['cancelled', order.id]
+    );
+    
+    // Refund to wallet if paid
+    if (order.payment_status === 'paid') {
+      await client.query(
+        'UPDATE users SET wallet_balance = wallet_balance + $1 WHERE id=$2',
+        [order.total_amount, req.user.id]
+      );
+      
+      // Record wallet transaction
+      await client.query(
+        `INSERT INTO wallet_transactions (user_id, type, amount, description, reference)
+         VALUES ($1, 'refund', $2, 'Order cancellation refund', $3)`,
+        [req.user.id, order.total_amount, order.id]
+      );
+    }
+    
+    await client.query('COMMIT');
+    
+    // Notify vendor
+    try {
+      const { notifyNewOrder } = require('../services/notifications');
+      // Send cancellation notification to venue
+    } catch(e) {}
+    
+    res.json({ 
+      success: true, 
+      message: order.payment_status === 'paid' 
+        ? `Order cancelled. ₦${Number(order.total_amount).toLocaleString()} refunded to your wallet.`
+        : 'Order cancelled successfully.',
+      refunded: order.payment_status === 'paid',
+      amount: order.total_amount
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = router;
 
 
