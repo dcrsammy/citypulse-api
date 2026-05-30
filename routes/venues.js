@@ -84,4 +84,49 @@ router.patch("/:id", auth, async (req, res) => {
   }
 });
 
+// POST /api/venues/:id/save - Toggle save/unsave venue
+router.post("/:id/save", auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    // Check if already saved
+    const existing = await db.query(
+      "SELECT id FROM saved_venues WHERE user_id=$1 AND venue_id=$2",
+      [userId, id]
+    );
+
+    if (existing.rows[0]) {
+      // Unsave
+      await db.query(
+        "DELETE FROM saved_venues WHERE user_id=$1 AND venue_id=$2",
+        [userId, id]
+      );
+      res.json({ saved: false });
+    } else {
+      // Save
+      await db.query(
+        "INSERT INTO saved_venues (user_id, venue_id) VALUES ($1, $2)",
+        [userId, id]
+      );
+      res.json({ saved: true });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/venues/:id/saved - Check if venue is saved
+router.get("/:id/saved", auth, async (req, res) => {
+  try {
+    const existing = await db.query(
+      "SELECT id FROM saved_venues WHERE user_id=$1 AND venue_id=$2",
+      [req.user.id, req.params.id]
+    );
+    res.json({ saved: !!existing.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
