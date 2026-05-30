@@ -152,6 +152,7 @@ router.patch("/:id/status", async (req, res) => {
 
 module.exports = router;
 
+
 router.post("/:id/reorder", auth, async (req, res) => {
   try {
     const originalOrder = await db.query(
@@ -167,39 +168,20 @@ router.post("/:id/reorder", auth, async (req, res) => {
 
     // Get original order items
     const items = await db.query(
-      "SELECT * FROM food_order_items WHERE order_id=$1",
+      "SELECT menu_item_id, name, quantity, unit_price FROM food_order_items WHERE order_id=$1",
       [req.params.id]
     );
 
-    // Create new order with same items
-    const newOrderRes = await db.query(
-      `INSERT INTO food_orders
-         (user_id, venue_id, order_type, subtotal, delivery_fee, platform_fee, total_amount,
-          payment_method, payment_status, order_status, cpp_earned, verification_pin)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', 'pending', $9, $10)
-       RETURNING *`,
-      [
-        req.user.id, order.venue_id, order.order_type,
-        order.subtotal, order.delivery_fee, order.platform_fee, order.total_amount,
-        order.payment_method, order.cpp_earned,
-        Math.floor(100000 + Math.random() * 900000).toString()
-      ]
-    );
-
-    const newOrder = newOrderRes.rows[0];
-
-    // Copy items to new order
-    for (const item of items.rows) {
-      await db.query(
-        `INSERT INTO food_order_items
-           (order_id, menu_item_id, name, quantity, unit_price, subtotal, special_notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [newOrder.id, item.menu_item_id, item.name, item.quantity, item.unit_price, item.subtotal, item.special_notes]
-      );
-    }
-
-    res.json({ order: newOrder, message: "Order duplicated successfully" });
+    // Return items for editing - don't create order yet!
+    res.json({ 
+      success: true,
+      venue_id: order.venue_id,
+      order_type: order.order_type,
+      items: items.rows
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
+module.exports = router;
