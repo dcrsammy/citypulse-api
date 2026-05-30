@@ -123,3 +123,23 @@ router.get("/venues", auth, async (req, res) => {
 });
 
 module.exports = router;
+
+// PATCH /api/vendor/venue/:id - Update venue (vendor auth)
+router.patch("/venue/:id", auth, async (req, res) => {
+  try {
+    const { cover_image, price_range, description, is_open } = req.body;
+    const result = await db.query(
+      `UPDATE venues SET 
+        cover_image = COALESCE($1, cover_image),
+        price_range = COALESCE($2, price_range),
+        description = COALESCE($3, description),
+        is_open = COALESCE($4, is_open)
+       WHERE id=$5 AND vendor_id=$6 RETURNING *`,
+      [cover_image, price_range, description, is_open, req.params.id, req.user.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: "Venue not found" });
+    res.json({ venue: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
