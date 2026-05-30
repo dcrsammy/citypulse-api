@@ -104,10 +104,10 @@ router.post("/:id/save", auth, async (req, res) => {
 // PATCH /api/venues/:id
 router.patch("/:id", auth, async (req, res) => {
   try {
-    const { is_open } = req.body;
+    const { is_open, cover_image, price_range, description } = req.body;
     const result = await db.query(
-      "UPDATE venues SET is_open=$1 WHERE id=$2 RETURNING *",
-      [is_open, req.params.id]
+      "UPDATE venues SET is_open=COALESCE($1, is_open), cover_image=COALESCE($2, cover_image), price_range=COALESCE($3, price_range), description=COALESCE($4, description) WHERE id=$5 RETURNING *",
+      [is_open, cover_image, price_range, description, req.params.id]
     );
     res.json(result.rows[0]);
   } catch (err) {
