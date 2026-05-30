@@ -2,9 +2,10 @@ const router = require("express").Router();
 const db = require("../db");
 const auth = require("../middleware/auth");
 
-// GET /api/venues - Public: List all active restaurants for customers
+// GET /api/venues - Public: List all active restaurants
 router.get("/", async (req, res) => {
   try {
+    console.log("Fetching all active venues...");
     const result = await db.query(
       `SELECT id, name, category, cover_image, address, latitude, longitude, 
               avg_rating, avg_prep_time_mins, is_live, delivery_zone_km
@@ -12,33 +13,22 @@ router.get("/", async (req, res) => {
        WHERE is_live = true AND is_verified = true
        ORDER BY avg_rating DESC`
     );
+    console.log("Found venues:", result.rows.length);
     res.json({ venues: result.rows });
   } catch (err) {
+    console.error("Venues error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/vendor/venues - Get vendor's venues (requires auth)
-router.get("/vendor/venues", auth, async (req, res) => {
-  try {
-    const result = await db.query(
-      "SELECT * FROM venues WHERE vendor_id=$1",
-      [req.user.id]
-    );
-    res.json({ venues: result.rows });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET /api/venues/:id - Get single venue details
+// GET /api/venues/:id - Get single venue
 router.get("/:id", async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT * FROM venues WHERE id=$1 AND is_live = true`,
+      `SELECT * FROM venues WHERE id=$1`,
       [req.params.id]
     );
-    res.json(result.rows[0]);
+    res.json(result.rows[0] || {});
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

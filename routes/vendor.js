@@ -109,4 +109,17 @@ router.get("/orders", auth, async (req, res) => {
   }
 });
 
+// GET /api/vendor/venues - Get vendor's venues
+router.get("/venues", auth, async (req, res) => {
+  try {
+    const result = await db.query(
+      "SELECT * FROM venues WHERE vendor_id=$1",
+      [req.user.id]
+    );
+    res.json({ venues: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
