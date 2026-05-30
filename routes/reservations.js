@@ -178,3 +178,55 @@ router.patch("/:id/cancel", auth, async (req, res) => {
 });
 
 module.exports = router;
+// GET /api/reservations/vendor - Get all reservations for vendor's venues
+router.get("/vendor", auth, async (req, res) => {
+  try {
+    // Get vendor's venues
+    const venuesRes = await db.query(
+      "SELECT id FROM venues WHERE vendor_id=$1",
+      [req.user.id]
+    );
+    const venueIds = venuesRes.rows.map(v => v.id);
+    if (venueIds.length === 0) return res.json({ reservations: [] });
+
+    const result = await db.query(
+      `SELECT r.*, 
+        u.full_name, u.email as user_email,
+        v.name as venue_name,
+        json_agg(json_build_object(
+          'name', poi.name,
+          'quantity', poi.quantity,
+          'unit_price', poi.unit_price
+        )) FILTER (WHERE poi.id IS NOT NULL) as pre_order_items
+       FROM reservations r
+       JOIN users u ON r.user_id = u.id
+       JOIN venues v ON r.venue_id = v.id
+       LEFT JOIN pre_order_items poi ON poi.reservation_id = r.id
+       WHERE r.venue_id = ANY($1)
+       GROUP BY r.id, u.full_name, u.email, v.name
+       ORDER BY r.reservation_date DESC, r.arrival_time DESC`,
+      [venueIds]
+    );
+    res.json({ reservations: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/reservations/:id/status - Vendor updates reservation status
+router.patch("/:id/status", auth, async (req, res) => {
+  try {
+    const { status } = req.body;
+    const allowed = ['confirmed', 'seated', 'completed', 'cancelled', 'no_show'];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ error: "Invalid status" });
+    }
+    const result = await db.query(
+      "UPDATE reservations SET status=$1, updated_at=NOW() WHERE id=$2 RETURNING *",
+      [status, req.params.id]
+    );
+    res.json({ reservation: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
