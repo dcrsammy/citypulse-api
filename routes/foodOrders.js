@@ -185,3 +185,31 @@ router.patch("/:id/status", async (req, res) => {
 });
 
 module.exports = router;
+
+// PATCH /api/food-orders/:id/accept - Vendor accepts order
+router.patch("/:id/accept", async (req, res) => {
+  try {
+    const result = await db.query(
+      "UPDATE food_orders SET order_status='confirmed' WHERE id=$1 RETURNING *",
+      [req.params.id]
+    );
+    res.json({ order: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/food-orders/:id/reject - Vendor rejects order
+router.patch("/:id/reject", async (req, res) => {
+  try {
+    const result = await db.query(
+      "UPDATE food_orders SET order_status='cancelled' WHERE id=$1 RETURNING *",
+      [req.params.id]
+    );
+    res.json({ order: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;
