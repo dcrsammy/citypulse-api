@@ -129,4 +129,17 @@ router.get("/:id/saved", auth, async (req, res) => {
   }
 });
 
+// GET /api/venues/saved/list - Get all saved venues for user
+router.get("/saved/list", auth, async (req, res) => {
+  try {
+    const result = await db.query(
+      "SELECT v.* FROM venues v JOIN saved_venues sv ON v.id = sv.venue_id WHERE sv.user_id=$1 ORDER BY sv.created_at DESC",
+      [req.user.id]
+    );
+    res.json({ venues: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
