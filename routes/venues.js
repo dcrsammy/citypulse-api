@@ -2,6 +2,19 @@ const router = require("express").Router();
 const db = require("../db");
 const auth = require("../middleware/auth");
 
+// GET /api/venues - Get vendor's venues
+router.get("/", auth, async (req, res) => {
+  try {
+    const result = await db.query(
+      "SELECT * FROM venues WHERE vendor_id=$1",
+      [req.user.id]
+    );
+    res.json({ venues: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/venues/:id
 router.get("/:id", async (req, res) => {
   try {
