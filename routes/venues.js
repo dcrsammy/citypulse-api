@@ -73,7 +73,7 @@ router.get("/:id", async (req, res) => {
 router.get("/:id/saved", auth, async (req, res) => {
   try {
     const existing = await db.query(
-      "SELECT user_id FROM saved_venues WHERE user_id=$1 AND venue_id=$2",
+      "SELECT id FROM saved_venues WHERE user_id=$1 AND venue_id=$2",
       [req.user.id, req.params.id]
     );
     res.json({ saved: !!existing.rows[0] });
@@ -104,10 +104,10 @@ router.post("/:id/save", auth, async (req, res) => {
 // PATCH /api/venues/:id
 router.patch("/:id", auth, async (req, res) => {
   try {
-    const { is_open, cover_image, price_range, description } = req.body;
+    const { is_open } = req.body;
     const result = await db.query(
-      "UPDATE venues SET is_open=COALESCE($1, is_open), cover_image=COALESCE($2, cover_image), price_range=COALESCE($3, price_range), description=COALESCE($4, description) WHERE id=$5 RETURNING *",
-      [is_open, cover_image, price_range, description, req.params.id]
+      "UPDATE venues SET is_open=$1 WHERE id=$2 RETURNING *",
+      [is_open, req.params.id]
     );
     res.json(result.rows[0]);
   } catch (err) {
