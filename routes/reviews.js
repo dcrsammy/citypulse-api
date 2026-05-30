@@ -2,7 +2,20 @@ const router = require("express").Router();
 const db = require("../db");
 const auth = require("../middleware/auth");
 
-// GET /api/reviews?venue_id=xxx
+// GET /api/reviews/venue/:id - Get reviews for a venue
+router.get("/venue/:id", async (req, res) => {
+  try {
+    const result = await db.query(
+      "SELECT r.*, u.full_name FROM reviews r LEFT JOIN users u ON r.user_id = u.id WHERE r.venue_id=$1 ORDER BY r.created_at DESC",
+      [req.params.id]
+    );
+    res.json({ reviews: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/reviews?venue_id=xxx - Get reviews by query param
 router.get("/", async (req, res) => {
   try {
     const { venue_id } = req.query;
@@ -11,6 +24,20 @@ router.get("/", async (req, res) => {
       [venue_id]
     );
     res.json({ reviews: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/reviews - Create review
+router.post("/", auth, async (req, res) => {
+  try {
+    const { venue_id, rating, comment } = req.body;
+    const result = await db.query(
+      "INSERT INTO reviews (user_id, venue_id, rating, comment) VALUES ($1, $2, $3, $4) RETURNING *",
+      [req.user.id, venue_id, rating, comment]
+    );
+    res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
