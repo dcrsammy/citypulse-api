@@ -73,7 +73,7 @@ router.get("/:id", async (req, res) => {
 router.get("/:id/saved", auth, async (req, res) => {
   try {
     const existing = await db.query(
-      "SELECT id FROM saved_venues WHERE user_id=$1 AND venue_id=$2",
+      "SELECT user_id FROM saved_venues WHERE user_id=$1 AND venue_id=$2",
       [req.user.id, req.params.id]
     );
     res.json({ saved: !!existing.rows[0] });
