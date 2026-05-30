@@ -219,7 +219,7 @@ router.post('/:id/cancel', auth, async (req, res) => {
   }
 });
 
-module.exports = router;
+
 
 
 router.post("/:id/reorder", auth, async (req, res) => {
@@ -250,6 +250,50 @@ router.post("/:id/reorder", auth, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;
+
+router.post("/:id/cancel", auth, async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    await client.query("BEGIN");
+    const orderRes = await client.query(
+      "SELECT * FROM food_orders WHERE id=$1 AND user_id=$2",
+      [req.params.id, req.user.id]
+    );
+    if (!orderRes.rows[0]) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "Order not found" });
+    }
+    const order = orderRes.rows[0];
+    const cancellable = ["pending", "confirmed"].includes(order.order_status);
+    if (!cancellable) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "Cannot cancel - order already being prepared" });
+    }
+    await client.query(
+      "UPDATE food_orders SET order_status='cancelled', updated_at=NOW() WHERE id=$1",
+      [order.id]
+    );
+    if (order.payment_status === "paid") {
+      await client.query(
+        "UPDATE users SET wallet_balance = wallet_balance + $1 WHERE id=$2",
+        [order.total_amount, req.user.id]
+      );
+    }
+    await client.query("COMMIT");
+    res.json({
+      success: true,
+      message: order.payment_status === "paid" ? "Order cancelled. Refund added to wallet." : "Order cancelled.",
+      refunded: order.payment_status === "paid"
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 });
 
