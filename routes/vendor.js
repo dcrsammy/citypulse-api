@@ -66,7 +66,7 @@ router.get("/me", auth, async (req, res) => {
   }
 });
 
-// GET /api/vendor/orders - Get vendor's orders
+// GET /api/vendor/orders - Get vendor's orders WITH ITEMS
 router.get("/orders", auth, async (req, res) => {
   try {
     // Get vendor's venue(s)
@@ -80,15 +80,29 @@ router.get("/orders", auth, async (req, res) => {
     if (venueIds.length === 0) {
       return res.json({ orders: [] });
     }
-    // Get orders for those venues
+
+    // Get orders with items
     const result = await db.query(
-      `SELECT fo.id, fo.user_id, fo.total_amount, fo.order_status, fo.created_at, u.full_name
+      `SELECT 
+        fo.id, fo.user_id, fo.venue_id, fo.total_amount, fo.order_status, 
+        fo.order_type, fo.special_requests, fo.delivery_address, fo.created_at,
+        u.full_name,
+        json_agg(json_build_object(
+          'name', foi.name, 
+          'quantity', foi.quantity,
+          'unit_price', foi.unit_price, 
+          'subtotal', foi.subtotal,
+          'special_notes', foi.special_notes
+        )) as items
        FROM food_orders fo
        LEFT JOIN users u ON fo.user_id = u.id
+       LEFT JOIN food_order_items foi ON fo.id = foi.order_id
        WHERE fo.venue_id = ANY($1)
+       GROUP BY fo.id, u.full_name
        ORDER BY fo.created_at DESC`,
       [venueIds]
     );
+
     res.json({ orders: result.rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
