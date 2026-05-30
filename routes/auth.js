@@ -85,16 +85,47 @@ router.post('/vendor/register', async (req, res) => {
       return res.status(400).json({ error: 'Business name, email and password are required.' });
     const exists = await db.query('SELECT id FROM vendors WHERE email=$1', [email.trim().toLowerCase()]);
     if (exists.rows[0]) return res.status(409).json({ error: 'Email already registered.' });
+
+    // Try to geocode the address
+    let latitude = null;
+    let longitude = null;
+    let address_verified = false;
+    let kyc_status = 'pending';
+
+    if (business_address) {
+      try {
+        const geoQuery = encodeURIComponent(business_address + ', Lagos, Nigeria');
+        const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${geoQuery}&format=json&limit=1`, {
+          headers: { 'User-Agent': 'CityPulse/1.0' }
+        });
+        const geoData = await geoRes.json();
+        if (geoData && geoData[0]) {
+          latitude = parseFloat(geoData[0].lat);
+          longitude = parseFloat(geoData[0].lon);
+          address_verified = true;
+        }
+      } catch (geoErr) {
+        console.error('Geocoding error:', geoErr.message);
+      }
+    }
+
     const password_hash = await bcrypt.hash(password, 12);
     const result = await db.query(
-      `INSERT INTO vendors (business_name, email, phone, password_hash, is_verified, owner_full_name, cac_number, business_address, owner_bvn, kyc_status, kyc_submitted_at)
-       VALUES ($1,$2,$3,$4,false,$5,$6,$7,$8,'pending',NOW()) RETURNING *`,
-      [business_name.trim(), email.trim().toLowerCase(), phone || null, password_hash, owner_full_name || null, cac_number || null, business_address || null, owner_bvn || null]
+      `INSERT INTO vendors (business_name, email, phone, password_hash, is_verified, owner_full_name, cac_number, business_address, owner_bvn, kyc_status, kyc_submitted_at, latitude, longitude, address_verified)
+       VALUES ($1,$2,$3,$4,false,$5,$6,$7,$8,$9,NOW(),$10,$11,$12) RETURNING *`,
+      [business_name.trim(), email.trim().toLowerCase(), phone || null, password_hash, owner_full_name || null, cac_number || null, business_address || null, owner_bvn || null, kyc_status, latitude, longitude, address_verified]
     );
     const vendor = result.rows[0];
     const token = jwt.sign({ id: vendor.id, role: 'vendor' }, process.env.JWT_SECRET, { expiresIn: '30d' });
     const { password_hash: _, ...safe } = vendor;
-    res.status(201).json({ token, vendor: safe });
+    res.status(201).json({ 
+      token, 
+      vendor: safe,
+      address_verified,
+      message: address_verified 
+        ? 'Registration successful! Your address was verified.' 
+        : 'Registration successful! Your address could not be verified automatically and will be reviewed by our team.'
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
