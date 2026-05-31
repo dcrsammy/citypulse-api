@@ -6,7 +6,15 @@ require("dotenv").config();
 const app = express();
 app.set('trust proxy', 1);
 app.use(helmet());
-app.use(cors());
+app.use(cors({
+  origin: [
+    'https://citypulse-vendor.netlify.app',
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://localhost:8081',
+  ],
+  credentials: true
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
