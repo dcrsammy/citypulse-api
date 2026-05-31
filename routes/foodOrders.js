@@ -46,6 +46,19 @@ router.post("/", async (req, res) => {
     );
     const order = orderRes.rows[0];
 
+    // Handle wallet payment immediately
+    if (payment_method === 'wallet') {
+      const userRes = await client.query('SELECT wallet_balance FROM users WHERE id=$1', [req.user.id]);
+      const walletBalance = parseFloat(userRes.rows[0]?.wallet_balance || 0);
+      if (walletBalance < parseFloat(total_amount)) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Insufficient wallet balance.' });
+      }
+      await client.query('UPDATE users SET wallet_balance = wallet_balance - $1 WHERE id=$2', [parseFloat(total_amount), req.user.id]);
+      await client.query("UPDATE food_orders SET payment_status='paid', order_status='confirmed' WHERE id=$1", [order.id]);
+    }
+
+
     for (const item of items) {
       await client.query(
         `INSERT INTO food_order_items
