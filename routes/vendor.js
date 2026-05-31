@@ -162,4 +162,124 @@ router.post("/venues", auth, async (req, res) => {
   }
 });
 
+// GET /api/vendor/payout - Get payout info and balance
+router.get("/payout", auth, async (req, res) => {
+  try {
+    const vendor = await db.query(
+      "SELECT payout_bank, payout_account, payout_account_name FROM vendors WHERE id=$1",
+      [req.user.id]
+    );
+
+    // Calculate available balance (total sales - 25% commission)
+    const venuesRes = await db.query("SELECT id FROM venues WHERE vendor_id=$1", [req.user.id]);
+    const venueIds = venuesRes.rows.map(v => v.id);
+    
+    let available_balance = 0;
+    if (venueIds.length > 0) {
+      const balanceRes = await db.query(
+        "SELECT COALESCE(SUM(total_amount - platform_fee), 0) as balance FROM food_orders WHERE venue_id = ANY($1) AND payment_status='paid' AND payout_status IS DISTINCT FROM 'paid'",
+        [venueIds]
+      );
+      available_balance = parseFloat(balanceRes.rows[0].balance) || 0;
+    }
+
+    res.json({
+      ...vendor.rows[0],
+      available_balance
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/vendor/payout/bank - Update bank details
+router.patch("/payout/bank", auth, async (req, res) => {
+  try {
+    const { bank_code, account_number, account_name, bank_name } = req.body;
+    if (!bank_code || !account_number || !account_name) {
+      return res.status(400).json({ error: "Bank code, account number and account name are required" });
+    }
+    await db.query(
+      "UPDATE vendors SET payout_bank=$1, payout_account=$2, payout_account_name=$3, payout_bank_name=$4 WHERE id=$5",
+      [bank_code, account_number, account_name, bank_name || null, req.user.id]
+    );
+    res.json({ message: "Bank details updated!" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/vendor/payout/request - Request payout
+router.post("/payout/request", auth, async (req, res) => {
+  const axios = require('axios');
+  try {
+    const vendor = await db.query(
+      "SELECT * FROM vendors WHERE id=$1",
+      [req.user.id]
+    );
+    const v = vendor.rows[0];
+
+    if (!v.payout_bank || !v.payout_account) {
+      return res.status(400).json({ error: "Please add your bank details first" });
+    }
+
+    // Calculate available balance
+    const venuesRes = await db.query("SELECT id FROM venues WHERE vendor_id=$1", [req.user.id]);
+    const venueIds = venuesRes.rows.map(venue => venue.id);
+    
+    if (venueIds.length === 0) {
+      return res.status(400).json({ error: "No venues found" });
+    }
+
+    const balanceRes = await db.query(
+      "SELECT COALESCE(SUM(total_amount - platform_fee), 0) as balance FROM food_orders WHERE venue_id = ANY($1) AND payment_status='paid' AND payout_status IS DISTINCT FROM 'paid'",
+      [venueIds]
+    );
+    const amount = parseFloat(balanceRes.rows[0].balance) || 0;
+
+    if (amount < 1000) {
+      return res.status(400).json({ error: "Minimum payout is ₦1,000. Current balance: ₦" + amount.toLocaleString() });
+    }
+
+    const headers = {
+      Authorization: "Bearer " + process.env.PAYSTACK_SECRET_KEY,
+      "Content-Type": "application/json"
+    };
+
+    // Create transfer recipient
+    const recipientRes = await axios.post(
+      "https://api.paystack.co/transferrecipient",
+      { type: "nuban", name: v.payout_account_name, account_number: v.payout_account, bank_code: v.payout_bank, currency: "NGN" },
+      { headers }
+    );
+    const recipient_code = recipientRes.data.data.recipient_code;
+
+    // Initiate transfer
+    const transferRes = await axios.post(
+      "https://api.paystack.co/transfer",
+      { source: "balance", amount: Math.round(amount * 100), recipient: recipient_code, reason: "CityPulse vendor payout" },
+      { headers }
+    );
+
+    if (transferRes.data.data.status === "success" || transferRes.data.data.status === "pending") {
+      // Mark orders as paid out
+      await db.query(
+        "UPDATE food_orders SET payout_status='paid' WHERE venue_id = ANY($1) AND payment_status='paid' AND payout_status IS DISTINCT FROM 'paid'",
+        [venueIds]
+      );
+
+      res.json({
+        success: true,
+        message: "₦" + amount.toLocaleString() + " payout initiated! Arrives in 1-2 minutes.",
+        amount,
+        transfer_status: transferRes.data.data.status
+      });
+    } else {
+      res.status(400).json({ error: "Transfer failed. Please try again." });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.response?.data?.message || err.message });
+  }
+});
+
 module.exports = router;
