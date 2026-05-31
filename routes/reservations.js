@@ -1,4 +1,5 @@
 const router = require("express").Router();
+const { sendEmail, templates } = require("../services/email");
 const db     = require("../db");
 const auth   = require("../middleware/auth");
 
@@ -75,6 +76,22 @@ router.post("/", auth, async (req, res) => {
     // Get venue details for response
     const venue = await db.query("SELECT name, address FROM venues WHERE id=$1", [venue_id]);
 
+    // Send confirmation email
+    try {
+      const userRes = await db.query("SELECT full_name, email FROM users WHERE id=$1", [req.user.id]);
+      const user = userRes.rows[0];
+      const venueRes = await db.query("SELECT name FROM venues WHERE id=$1", [venue_id]);
+      const venueName = venueRes.rows[0]?.name || 'the venue';
+      const formattedDate = new Date(reservation_date).toLocaleDateString('en-NG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+      const pin = reservation.rows[0].verification_pin || '';
+      await sendEmail(
+        user.email,
+        'Reservation Confirmed - ' + venueName,
+        templates.reservationConfirmation(user.full_name, venueName, formattedDate, arrival_time.slice(0,5), party_size, pin)
+      );
+    } catch(emailErr) {
+      console.error('Reservation email failed:', emailErr.message);
+    }
     res.status(201).json({
       reservation: reservation.rows[0],
       pre_order_total: preOrderTotal,

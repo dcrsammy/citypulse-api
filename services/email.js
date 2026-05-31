@@ -73,6 +73,34 @@ const templates = {
   `
 };
 
+templates.reservationConfirmation = (customerName, venueName, date, time, partySize, pin) => `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #fff;">
+      <div style="background: #000; padding: 24px; text-align: center;">
+        <h1 style="color: #FF8C42; margin: 0;">CityPulse</h1>
+      </div>
+      <div style="padding: 32px;">
+        <h2 style="color: #000;">🎉 Reservation Confirmed!</h2>
+        <p>Hi ${customerName},</p>
+        <p>Your table at <strong>${venueName}</strong> is confirmed!</p>
+        <div style="background: #f9f9f9; border: 1px solid #E5E5E5; border-radius: 12px; padding: 24px; margin: 24px 0;">
+          <p style="margin: 0 0 8px 0;"><strong>📅 Date:</strong> ${date}</p>
+          <p style="margin: 0 0 8px 0;"><strong>🕐 Time:</strong> ${time}</p>
+          <p style="margin: 0 0 8px 0;"><strong>👥 Party:</strong> ${partySize === 1 ? 'Solo' : 'Group of ' + partySize}</p>
+          <p style="margin: 0;"><strong>📍 Venue:</strong> ${venueName}</p>
+        </div>
+        <div style="background: #000; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0;">
+          <p style="color: #FF8C42; margin: 0 0 8px 0; font-size: 12px; font-weight: 700; text-transform: uppercase;">Your Verification PIN</p>
+          <p style="color: #FFF; font-size: 36px; font-weight: 800; margin: 0; letter-spacing: 8px;">${pin}</p>
+          <p style="color: #999; font-size: 12px; margin: 8px 0 0 0;">Show this PIN or your QR code at the restaurant</p>
+        </div>
+        <p style="color: #666; font-size: 13px;">Need to cancel? Please do so at least 2 hours before your reservation.</p>
+      </div>
+      <div style="background: #f5f5f5; padding: 16px; text-align: center;">
+        <p style="margin: 0; color: #999; font-size: 12px;">CityPulse · Lagos Never Sleeps</p>
+      </div>
+    </div>
+  `;
+
 module.exports = {
   sendEmail,
   templates
