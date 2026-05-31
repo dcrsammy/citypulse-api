@@ -155,4 +155,68 @@ router.get("/disputes", async (req, res) => {
   }
 });
 
+// Approve venue
+router.patch("/venues/:id/approve", async (req, res) => {
+  try {
+    await db.query("UPDATE venues SET is_live=true, is_verified=true WHERE id=$1", [req.params.id]);
+    res.json({ message: "Venue approved and live!" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Reject venue
+router.patch("/venues/:id/reject", async (req, res) => {
+  try {
+    await db.query("UPDATE venues SET is_live=false, is_verified=false WHERE id=$1", [req.params.id]);
+    res.json({ message: "Venue rejected." });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get all orders
+router.get("/orders", async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT fo.*, u.full_name, v.name as venue_name 
+      FROM food_orders fo
+      JOIN users u ON fo.user_id = u.id
+      JOIN venues v ON fo.venue_id = v.id
+      ORDER BY fo.created_at DESC
+      LIMIT 100
+    `);
+    res.json({ orders: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get all reservations
+router.get("/reservations", async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT r.*, u.full_name, v.name as venue_name
+      FROM reservations r
+      JOIN users u ON r.user_id = u.id
+      JOIN venues v ON r.venue_id = v.id
+      ORDER BY r.created_at DESC
+      LIMIT 100
+    `);
+    res.json({ reservations: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Verify vendor
+router.patch("/vendors/:id/verify", async (req, res) => {
+  try {
+    await db.query("UPDATE vendors SET is_verified=true, kyc_status='approved' WHERE id=$1", [req.params.id]);
+    res.json({ message: "Vendor verified!" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
