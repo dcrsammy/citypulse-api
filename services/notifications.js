@@ -63,8 +63,68 @@ async function notifyVenueApproved(venueId) {
   }
 }
 
+// Send Expo push notification
+async function sendPushNotification(expoPushToken, title, body, data = {}) {
+  try {
+    const message = {
+      to: expoPushToken,
+      sound: 'default',
+      title,
+      body,
+      data,
+    };
+    const res = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message),
+    });
+    const result = await res.json();
+    console.log('✅ Push sent:', result);
+    return result;
+  } catch (err) {
+    console.error('❌ Push error:', err.message);
+  }
+}
+
+// Notify customer: Order status changed
+async function notifyOrderStatus(orderId, status) {
+  try {
+    const result = await db.query(
+      'SELECT u.fcm_token, u.full_name, u.email FROM food_orders fo JOIN users u ON fo.user_id = u.id WHERE fo.id=$1',
+      [orderId]
+    );
+    const user = result.rows[0];
+    if (!user) return;
+
+    const statusMessages = {
+      confirmed:  { title: '✅ Order Confirmed!',    body: 'Your order has been accepted by the restaurant.' },
+      preparing:  { title: '👨‍🍳 Being Prepared!',    body: 'The kitchen is working on your order.' },
+      ready:      { title: '🔔 Order Ready!',         body: 'Your order is ready for pickup/collection!' },
+      on_the_way: { title: '🛵 On The Way!',          body: 'Your order is heading to you!' },
+      completed:  { title: '🎉 Order Completed!',     body: 'Enjoy your meal! Leave a review?' },
+      cancelled:  { title: '❌ Order Cancelled',      body: 'Your order has been cancelled.' },
+    };
+
+    const msg = statusMessages[status];
+    if (!msg) return;
+
+    // Send push notification
+    if (user.fcm_token && user.fcm_token.startsWith('ExponentPushToken')) {
+      await sendPushNotification(user.fcm_token, msg.title, msg.body, { orderId, status });
+    }
+
+    // Send email as backup
+    const emailHtml = templates.orderStatus(user.full_name, status, orderId);
+    await sendEmail(user.email, msg.title, emailHtml);
+  } catch (err) {
+    console.error('❌ Order status notification error:', err.message);
+  }
+}
+
 module.exports = {
   notifyNewOrder,
   notifyKYCApproved,
-  notifyVenueApproved
+  notifyVenueApproved,
+  notifyOrderStatus,
+  sendPushNotification
 };

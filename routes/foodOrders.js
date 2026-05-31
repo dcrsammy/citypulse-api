@@ -1,4 +1,4 @@
-const { sendPush } = require("../services/notifications");
+const { notifyOrderStatus } = require("../services/notifications");
 const { notifyNewOrder } = require("../services/notifications");
 const router = require("express").Router();
 const db     = require("../db");
