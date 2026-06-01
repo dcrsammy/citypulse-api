@@ -260,8 +260,8 @@ router.post("/verify-ticket", auth, async (req, res) => {
   }
 });
 
-// GET /api/events/my-tickets — user's tickets
-router.get("/my/tickets", auth, async (req, res) => {
+// GET /api/events/mytickets — user's tickets
+router.get("/mytickets", auth, async (req, res) => {
   try {
     const result = await db.query(
       `SELECT et.*, 
@@ -283,8 +283,8 @@ router.get("/my/tickets", auth, async (req, res) => {
   }
 });
 
-// GET /api/events/organizer/my-events — organizer sees their events
-router.get("/organizer/my-events", auth, async (req, res) => {
+// GET /api/events/organizer/myevents
+router.get("/organizer/myevents", auth, async (req, res) => {
   try {
     const vendorId = req.user.role === 'vendor' ? req.user.id : null;
     const organizerId = req.user.role === 'organizer' ? req.user.id : null;
