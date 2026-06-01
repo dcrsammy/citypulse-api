@@ -220,3 +220,37 @@ router.patch("/vendors/:id/verify", async (req, res) => {
 });
 
 module.exports = router;
+
+// GET /api/admin/events
+router.get("/events", async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT e.*,
+        COALESCE(eo.full_name, v.name) as organizer_name,
+        json_agg(t) FILTER (WHERE t.id IS NOT NULL) as ticket_types
+      FROM events e
+      LEFT JOIN event_organizers eo ON e.organizer_id = eo.id
+      LEFT JOIN vendors v ON e.vendor_id = v.id
+      LEFT JOIN event_ticket_types t ON t.event_id = e.id
+      GROUP BY e.id, eo.full_name, v.name
+      ORDER BY e.created_at DESC
+    `);
+    res.json({ events: result.rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/admin/events/:id/approve
+router.patch("/events/:id/approve", async (req, res) => {
+  try {
+    await db.query("UPDATE events SET status='approved', is_live=true WHERE id=$1", [req.params.id]);
+    res.json({ message: "Event approved and live!" });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/admin/events/:id/reject
+router.patch("/events/:id/reject", async (req, res) => {
+  try {
+    await db.query("UPDATE events SET status='rejected', is_live=false WHERE id=$1", [req.params.id]);
+    res.json({ message: "Event rejected." });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
