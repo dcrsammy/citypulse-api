@@ -130,7 +130,7 @@ router.get("/:id", async (req, res) => {
        LEFT JOIN venues v ON e.venue_id = v.id
        LEFT JOIN event_ticket_types t ON t.event_id = e.id
        WHERE e.id=$1
-       GROUP BY e.id, eo.full_name, eo.bio, eo.profile_image, v.name, v.address, v.neighbourhood, v.latitude, v.longitude, v.city`,
+       GROUP BY e.id, eo.full_name, eo.bio, eo.profile_image, vn.business_name, v.name, v.address, v.neighbourhood, v.latitude, v.longitude`,
       [req.params.id]
     );
     if (!result.rows[0]) return res.status(404).json({ error: "Event not found." });
