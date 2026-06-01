@@ -226,13 +226,13 @@ router.get("/events", async (req, res) => {
   try {
     const result = await db.query(`
       SELECT e.*,
-        COALESCE(eo.full_name, v.name) as organizer_name,
+        COALESCE(eo.full_name, vn.business_name) as organizer_name,
         json_agg(t) FILTER (WHERE t.id IS NOT NULL) as ticket_types
       FROM events e
       LEFT JOIN event_organizers eo ON e.organizer_id = eo.id
-      LEFT JOIN vendors v ON e.vendor_id = v.id
+      LEFT JOIN vendors vn ON e.vendor_id = vn.id
       LEFT JOIN event_ticket_types t ON t.event_id = e.id
-      GROUP BY e.id, eo.full_name, v.name
+      GROUP BY e.id, eo.full_name, vn.business_name
       ORDER BY e.created_at DESC
     `);
     res.json({ events: result.rows });
