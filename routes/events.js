@@ -405,3 +405,4 @@ router.patch("/:id", auth, async (req, res) => {
     client.release();
   }
 });
+module.exports = router;
