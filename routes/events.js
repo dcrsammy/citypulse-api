@@ -310,3 +310,34 @@ router.get("/organizer/myevents", auth, async (req, res) => {
 });
 
 module.exports = router;
+
+// PATCH /api/events/:id — update event (vendor/organizer)
+router.patch("/:id", auth, async (req, res) => {
+  try {
+    const { title, description, category, event_date, start_time, end_time, cover_image, is_free, max_capacity, address } = req.body;
+    const result = await db.query(
+      `UPDATE events SET
+        title = COALESCE($1, title),
+        name = COALESCE($1, name),
+        description = COALESCE($2, description),
+        category = COALESCE($3, category),
+        event_date = COALESCE($4, event_date),
+        start_time = COALESCE($5, start_time),
+        end_time = COALESCE($6, end_time),
+        cover_image = COALESCE($7, cover_image),
+        is_free = COALESCE($8, is_free),
+        max_capacity = COALESCE($9, max_capacity),
+        address = COALESCE($10, address),
+        status = 'pending',
+        updated_at = NOW()
+       WHERE id=$11 AND (vendor_id=$12 OR organizer_id=$12)
+       RETURNING *`,
+      [title, description, category, event_date, start_time, end_time,
+       cover_image, is_free, max_capacity, address, req.params.id, req.user.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: "Event not found" });
+    res.json({ event: result.rows[0], message: "Event updated! Pending re-approval." });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
