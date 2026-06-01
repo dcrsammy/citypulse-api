@@ -10,7 +10,7 @@ const headers = { Authorization: `Bearer ${PAYSTACK_SECRET}` };
 // POST /api/payments/initialize
 router.post("/initialize", auth, async (req, res) => {
   try {
-    const { amount, type, booking_id, venue_id, event_id } = req.body;
+    const { amount, type, booking_id, venue_id, event_id, ticket_type_id, quantity } = req.body;
     const user = await db.query("SELECT email, full_name FROM users WHERE id=$1", [req.user.id]);
     const u = user.rows[0];
     const response = await axios.post(
@@ -18,7 +18,7 @@ router.post("/initialize", auth, async (req, res) => {
       {
         amount: Math.round(amount * 100),
         email: u.email,
-        metadata: { user_id: req.user.id, type, booking_id, venue_id, event_id, full_name: u.full_name },
+        metadata: { user_id: req.user.id, type, booking_id, venue_id, event_id, ticket_type_id, quantity, full_name: u.full_name },
         currency: "NGN",
         callback_url: process.env.PAYSTACK_CALLBACK_URL,
       },
