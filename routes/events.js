@@ -32,7 +32,7 @@ router.get("/", async (req, res) => {
     if (date) { query += ` AND e.event_date=$${i++}`; params.push(date); }
     if (free === "true") { query += ` AND e.is_free=true`; }
 
-    query += ` GROUP BY e.id, eo.full_name, v.name, v.neighbourhood, v.address, v.latitude, v.longitude
+    query += ` GROUP BY e.id, eo.full_name, v.name, v.neighbourhood, v.address, v.latitude, v.longitude, v.city
                ORDER BY e.is_featured DESC, e.event_date ASC
                LIMIT $${i} OFFSET $${i+1}`;
     params.push(parseInt(limit), parseInt(offset));
@@ -68,7 +68,7 @@ router.get("/:id", async (req, res) => {
        LEFT JOIN venues v ON e.venue_id = v.id
        LEFT JOIN event_ticket_types t ON t.event_id = e.id
        WHERE e.id=$1
-       GROUP BY e.id, eo.full_name, eo.bio, eo.profile_image, v.name, v.address, v.neighbourhood, v.latitude, v.longitude`,
+       GROUP BY e.id, eo.full_name, eo.bio, eo.profile_image, v.name, v.address, v.neighbourhood, v.latitude, v.longitude, v.city`,
       [req.params.id]
     );
     if (!result.rows[0]) return res.status(404).json({ error: "Event not found." });
