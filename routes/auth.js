@@ -172,3 +172,26 @@ router.get('/me', require('../middleware/auth'), async (req, res) => {
 });
 
 module.exports = router;
+
+// PATCH /api/auth/profile — update username and bio
+router.patch("/profile", auth, async (req, res) => {
+  try {
+    const { username, bio } = req.body;
+    if (username) {
+      const existing = await db.query(
+        `SELECT id FROM users WHERE username=$1 AND id!=$2`,
+        [username, req.user.id]
+      );
+      if (existing.rows[0]) return res.status(400).json({ error: 'Username already taken.' });
+    }
+    const result = await db.query(
+      `UPDATE users SET
+        username = COALESCE($1, username),
+        bio = COALESCE($2, bio),
+        updated_at = NOW()
+       WHERE id=$3 RETURNING id, full_name, email, username, bio, citypulse_id, avatar_url, wallet_balance, cpp_points, cpp_tier, neighbourhood`,
+      [username || null, bio || null, req.user.id]
+    );
+    res.json({ user: result.rows[0] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
