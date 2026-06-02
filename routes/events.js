@@ -49,6 +49,54 @@ router.get("/", async (req, res) => {
 
 
 // GET /api/events/:id — single event detail
+
+router.get("/mytickets", auth, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT et.*, 
+        tt.name as ticket_type, tt.price,
+        e.title as event_title, e.event_date, e.start_time,
+        e.cover_image, e.address,
+        COALESCE(v.name, e.address) as venue_name
+       FROM event_tickets et
+       JOIN event_ticket_types tt ON et.ticket_type_id = tt.id
+       JOIN events e ON et.event_id = e.id
+       LEFT JOIN venues v ON e.venue_id = v.id
+       WHERE et.user_id = $1
+       ORDER BY e.event_date DESC`,
+      [req.user.id]
+    );
+    res.json({ tickets: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/organizer/myevents", auth, async (req, res) => {
+  try {
+    const vendorId = req.user.role === 'vendor' ? req.user.id : null;
+    const organizerId = req.user.role === 'organizer' ? req.user.id : null;
+
+    const result = await db.query(
+      `SELECT e.*,
+        json_agg(json_build_object('id',t.id,'name',t.name,'price',t.price,'sold',t.quantity_sold,'total',t.quantity_total)) 
+        FILTER (WHERE t.id IS NOT NULL) as ticket_types,
+        COALESCE(SUM(ep.total_amount),0) as total_revenue,
+        COALESCE(SUM(ep.quantity),0) as total_tickets_sold
+       FROM events e
+       LEFT JOIN event_ticket_types t ON t.event_id = e.id
+       LEFT JOIN event_purchases ep ON ep.event_id = e.id AND ep.payment_status='paid'
+       WHERE ($1::uuid IS NULL OR e.vendor_id=$1) AND ($2::uuid IS NULL OR e.organizer_id=$2)
+       GROUP BY e.id
+       ORDER BY e.event_date DESC`,
+      [vendorId, organizerId]
+    );
+    res.json({ events: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/:id", async (req, res) => {
   try {
     const result = await db.query(
@@ -265,53 +313,8 @@ router.post("/verify-ticket", auth, async (req, res) => {
 });
 
 // GET /api/events/mytickets — user's tickets
-router.get("/mytickets", auth, async (req, res) => {
-  try {
-    const result = await db.query(
-      `SELECT et.*, 
-        tt.name as ticket_type, tt.price,
-        e.title as event_title, e.event_date, e.start_time,
-        e.cover_image, e.address,
-        COALESCE(v.name, e.address) as venue_name
-       FROM event_tickets et
-       JOIN event_ticket_types tt ON et.ticket_type_id = tt.id
-       JOIN events e ON et.event_id = e.id
-       LEFT JOIN venues v ON e.venue_id = v.id
-       WHERE et.user_id = $1
-       ORDER BY e.event_date DESC`,
-      [req.user.id]
-    );
-    res.json({ tickets: result.rows });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // GET /api/events/organizer/myevents
-router.get("/organizer/myevents", auth, async (req, res) => {
-  try {
-    const vendorId = req.user.role === 'vendor' ? req.user.id : null;
-    const organizerId = req.user.role === 'organizer' ? req.user.id : null;
-
-    const result = await db.query(
-      `SELECT e.*,
-        json_agg(json_build_object('id',t.id,'name',t.name,'price',t.price,'sold',t.quantity_sold,'total',t.quantity_total)) 
-        FILTER (WHERE t.id IS NOT NULL) as ticket_types,
-        COALESCE(SUM(ep.total_amount),0) as total_revenue,
-        COALESCE(SUM(ep.quantity),0) as total_tickets_sold
-       FROM events e
-       LEFT JOIN event_ticket_types t ON t.event_id = e.id
-       LEFT JOIN event_purchases ep ON ep.event_id = e.id AND ep.payment_status='paid'
-       WHERE ($1::uuid IS NULL OR e.vendor_id=$1) AND ($2::uuid IS NULL OR e.organizer_id=$2)
-       GROUP BY e.id
-       ORDER BY e.event_date DESC`,
-      [vendorId, organizerId]
-    );
-    res.json({ events: result.rows });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 
 // POST /api/events/confirm-payment — confirm Paystack payment for tickets
