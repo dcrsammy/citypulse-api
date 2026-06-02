@@ -46,3 +46,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`CityPulse API running on port ${PORT}`));
 
 app.use("/api/analytics", require("./routes/analytics"));
+app.use("/api/chat", require("./routes/chat"));
