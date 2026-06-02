@@ -44,67 +44,9 @@ router.get("/", async (req, res) => {
   }
 });
 
-// GET /api/events/mytickets — user's tickets
-router.get("/mytickets", auth, async (req, res) => {
-  try {
-    const result = await db.query(
-      `SELECT et.*, 
-        tt.name as ticket_type, tt.price,
-        e.title as event_title, e.event_date, e.start_time,
-        e.cover_image, e.address,
-        COALESCE(v.name, e.address) as venue_name
-       FROM event_tickets et
-       JOIN event_ticket_types tt ON et.ticket_type_id = tt.id
-       JOIN events e ON et.event_id = e.id
-       LEFT JOIN venues v ON e.venue_id = v.id
-       WHERE et.user_id = $1
-       ORDER BY e.event_date DESC`,
-      [req.user.id]
-    );
-    res.json({ tickets: result.rows });
 
-// GET /api/events/organizer/myevents
-router.get("/organizer/myevents", auth, async (req, res) => {
-  try {
-    const vendorId = req.user.role === 'vendor' ? req.user.id : null;
-    const organizerId = req.user.role === 'organizer' ? req.user.id : null;
 
-    const result = await db.query(
-      `SELECT e.*,
-        json_agg(json_build_object('id',t.id,'name',t.name,'price',t.price,'sold',t.quantity_sold,'total',t.quantity_total)) 
-        FILTER (WHERE t.id IS NOT NULL) as ticket_types,
-        COALESCE(SUM(ep.total_amount),0) as total_revenue,
-        COALESCE(SUM(ep.quantity),0) as total_tickets_sold
-       FROM events e
-       LEFT JOIN event_ticket_types t ON t.event_id = e.id
-       LEFT JOIN event_purchases ep ON ep.event_id = e.id AND ep.payment_status='paid'
-       WHERE ($1::uuid IS NULL OR e.vendor_id=$1) AND ($2::uuid IS NULL OR e.organizer_id=$2)
-       GROUP BY e.id
-       ORDER BY e.event_date DESC`,
-      [vendorId, organizerId]
-    );
-    res.json({ events: result.rows });
 
-// POST /api/events/verify-ticket — scan QR at door
-router.post("/verify-ticket", auth, async (req, res) => {
-  try {
-    const { qr_code } = req.body;
-    if (!qr_code) return res.status(400).json({ error: "QR code required." });
-
-// POST /api/events/confirm-payment — confirm Paystack payment for tickets
-router.post("/confirm-payment", auth, async (req, res) => {
-  const client = await db.pool.connect();
-  try {
-    const { reference, event_id, ticket_type_id, quantity } = req.body;
-    const axios = require('axios');
-
-    // Verify with Paystack
-    const verify = await axios.get(
-      `https://api.paystack.co/transaction/verify/${reference}`,
-      { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } }
-    );
-    const txn = verify.data.data;
-    if (txn.status !== 'success') return res.status(400).json({ error: 'Payment not successful.' });
 
 // GET /api/events/:id — single event detail
 router.get("/:id", async (req, res) => {
@@ -277,6 +219,11 @@ router.post("/:id/purchase", auth, async (req, res) => {
   }
 });
 
+// POST /api/events/verify-ticket — scan QR at door
+router.post("/verify-ticket", auth, async (req, res) => {
+  try {
+    const { qr_code } = req.body;
+    if (!qr_code) return res.status(400).json({ error: "QR code required." });
 
     // Verify JWT signature
     let decoded;
@@ -317,16 +264,106 @@ router.post("/:id/purchase", auth, async (req, res) => {
   }
 });
 
+// GET /api/events/mytickets — user's tickets
+router.get("/mytickets", auth, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT et.*, 
+        tt.name as ticket_type, tt.price,
+        e.title as event_title, e.event_date, e.start_time,
+        e.cover_image, e.address,
+        COALESCE(v.name, e.address) as venue_name
+       FROM event_tickets et
+       JOIN event_ticket_types tt ON et.ticket_type_id = tt.id
+       JOIN events e ON et.event_id = e.id
+       LEFT JOIN venues v ON e.venue_id = v.id
+       WHERE et.user_id = $1
+       ORDER BY e.event_date DESC`,
+      [req.user.id]
+    );
+    res.json({ tickets: result.rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// GET /api/events/organizer/myevents
+router.get("/organizer/myevents", auth, async (req, res) => {
+  try {
+    const vendorId = req.user.role === 'vendor' ? req.user.id : null;
+    const organizerId = req.user.role === 'organizer' ? req.user.id : null;
+
+    const result = await db.query(
+      `SELECT e.*,
+        json_agg(json_build_object('id',t.id,'name',t.name,'price',t.price,'sold',t.quantity_sold,'total',t.quantity_total)) 
+        FILTER (WHERE t.id IS NOT NULL) as ticket_types,
+        COALESCE(SUM(ep.total_amount),0) as total_revenue,
+        COALESCE(SUM(ep.quantity),0) as total_tickets_sold
+       FROM events e
+       LEFT JOIN event_ticket_types t ON t.event_id = e.id
+       LEFT JOIN event_purchases ep ON ep.event_id = e.id AND ep.payment_status='paid'
+       WHERE ($1::uuid IS NULL OR e.vendor_id=$1) AND ($2::uuid IS NULL OR e.organizer_id=$2)
+       GROUP BY e.id
+       ORDER BY e.event_date DESC`,
+      [vendorId, organizerId]
+    );
+    res.json({ events: result.rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+
+// POST /api/events/confirm-payment — confirm Paystack payment for tickets
+router.post("/confirm-payment", auth, async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    const { reference, event_id, ticket_type_id, quantity } = req.body;
+    const axios = require('axios');
+    const verify = await axios.get(
+      `https://api.paystack.co/transaction/verify/${reference}`,
+      { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } }
+    );
+    const txn = verify.data.data;
+    if (txn.status !== 'success') return res.status(400).json({ error: 'Payment not successful.' });
+    await client.query("BEGIN");
+    const total_amount = txn.amount / 100;
+    const platform_fee = total_amount * 0.05;
+    const unit_price = total_amount / quantity;
+    const purchaseRes = await client.query(
+      `INSERT INTO event_purchases (event_id, ticket_type_id, user_id, quantity, unit_price, total_amount, platform_fee, payment_method, payment_status, payment_ref)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'paystack','paid',$8) RETURNING *`,
+      [event_id, ticket_type_id, req.user.id, quantity, unit_price, total_amount, platform_fee, reference]
+    );
+    const purchase = purchaseRes.rows[0];
+    const tickets = [];
+    for (let i = 0; i < quantity; i++) {
+      const ticketId = (await client.query("SELECT gen_random_uuid() as id")).rows[0].id;
+      const qrPayload = jwt.sign(
+        { event_id, ticket_id: ticketId, purchase_id: purchase.id, user_id: req.user.id },
+        process.env.JWT_SECRET, { expiresIn: '365d' }
+      );
+      const ticketRes = await client.query(
+        `INSERT INTO event_tickets (id, purchase_id, event_id, user_id, ticket_type_id, qr_code)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [ticketId, purchase.id, event_id, req.user.id, ticket_type_id, qrPayload]
+      );
+      tickets.push(ticketRes.rows[0]);
+    }
+    await client.query("UPDATE event_ticket_types SET quantity_sold = quantity_sold + $1 WHERE id=$2", [quantity, ticket_type_id]);
+    const cpp = Math.floor(total_amount / 1000) * 10;
+    if (cpp > 0) await client.query("UPDATE users SET cpp_points = cpp_points + $1 WHERE id=$2", [cpp, req.user.id]);
+    await client.query("COMMIT");
+    res.json({ tickets, cpp_earned: cpp });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+module.exports = router;
 
 // PATCH /api/events/:id — update event (vendor/organizer)
 router.patch("/:id", auth, async (req, res) => {
@@ -347,7 +384,7 @@ router.patch("/:id", auth, async (req, res) => {
         address = COALESCE($10, address),
         status = 'pending',
         updated_at = NOW()
-       WHERE id=$11 AND (vendor_id=$12 OR organizer_id=$12 OR true)
+       WHERE id=$11 AND (vendor_id=$12 OR organizer_id=$12)
        RETURNING *`,
       [title, description, category, event_date, start_time, end_time,
        cover_image, is_free, max_capacity, address, req.params.id, req.user.id]
@@ -358,7 +395,3 @@ router.patch("/:id", auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
-
-
-module.exports = router;
