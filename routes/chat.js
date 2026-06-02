@@ -2,7 +2,7 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const { db: firebase } = require('../services/firebase');
-const { v4: uuidv4 } = require('uuid');
+
 
 // ── FRIENDS ──────────────────────────────────────────────
 
