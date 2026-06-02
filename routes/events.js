@@ -327,7 +327,6 @@ router.post("/:id/purchase", auth, async (req, res) => {
   }
 });
 
-module.exports = router;
 
 // PATCH /api/events/:id — update event (vendor/organizer)
 router.patch("/:id", auth, async (req, res) => {
@@ -361,49 +360,5 @@ router.patch("/:id", auth, async (req, res) => {
 });
 
 
-    await client.query("BEGIN");
-    const total_amount = txn.amount / 100;
-    const platform_fee = total_amount * 0.05;
-    const unit_price = total_amount / quantity;
 
-    // Create purchase
-    const purchaseRes = await client.query(
-      `INSERT INTO event_purchases (event_id, ticket_type_id, user_id, quantity, unit_price, total_amount, platform_fee, payment_method, payment_status, payment_ref)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'paystack','paid',$8) RETURNING *`,
-      [event_id, ticket_type_id, req.user.id, quantity, unit_price, total_amount, platform_fee, reference]
-    );
-    const purchase = purchaseRes.rows[0];
-
-    // Generate tickets
-    const jwt = require('jsonwebtoken');
-    const tickets = [];
-    for (let i = 0; i < quantity; i++) {
-      const ticketId = (await client.query("SELECT gen_random_uuid() as id")).rows[0].id;
-      const qrPayload = jwt.sign(
-        { event_id, ticket_id: ticketId, purchase_id: purchase.id, user_id: req.user.id },
-        process.env.JWT_SECRET,
-        { expiresIn: '365d' }
-      );
-      const ticketRes = await client.query(
-        `INSERT INTO event_tickets (id, purchase_id, event_id, user_id, ticket_type_id, qr_code)
-         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-        [ticketId, purchase.id, event_id, req.user.id, ticket_type_id, qrPayload]
-      );
-      tickets.push(ticketRes.rows[0]);
-    }
-
-    await client.query("UPDATE event_ticket_types SET quantity_sold = quantity_sold + $1 WHERE id=$2", [quantity, ticket_type_id]);
-    const cpp = Math.floor(total_amount / 1000) * 10;
-    if (cpp > 0) await client.query("UPDATE users SET cpp_points = cpp_points + $1 WHERE id=$2", [cpp, req.user.id]);
-
-    await client.query("COMMIT");
-    res.json({ tickets, cpp_earned: cpp });
-  } catch (err) {
-    await client.query("ROLLBACK");
-    res.status(500).json({ error: err.message });
-  } finally {
-    client.release();
-  }
-});
 module.exports = router;
-// redeploy Tue, Jun  2, 2026  5:18:48 AM
