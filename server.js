@@ -43,6 +43,7 @@ app.get("/health", (req, res) => {
 app.use("/api/analytics", require("./routes/analytics"));
 app.use("/api/properties", require("./routes/properties"));
 app.use("/api/chat",      require("./routes/chat"));
+app.get("/version", (req, res) => res.json({ version: "2.1.0", routes: ["properties", "chat", "events"] }));
 app.use((req, res) => res.status(404).json({ error: "Route not found" }));
 app.use((err, req, res, next) => {
   console.error(err.stack);
@@ -51,4 +52,3 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`CityPulse API running on port ${PORT}`));
 
-app.get("/version", (req, res) => res.json({ version: "2.1.0", routes: ["properties", "chat", "events"] }));
