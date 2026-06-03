@@ -18,10 +18,10 @@ router.get('/', async (req, res) => {
     params.push(limit, offset);
     const result = await db.query(`
       SELECT p.*,
-        array_agg(DISTINCT pa.amenity) FILTER (WHERE pa.amenity IS NOT NULL) as amenities,
+        p.amenities,
         COUNT(pb.id) FILTER (WHERE pb.booking_status = 'confirmed') as total_bookings
       FROM properties p
-      LEFT JOIN property_amenities pa ON pa.property_id = p.id
+
       LEFT JOIN property_bookings pb ON pb.property_id = p.id
       WHERE ${where.join(' AND ')}
       GROUP BY p.id
@@ -51,14 +51,14 @@ router.get('/:id', async (req, res) => {
   try {
     const result = await db.query(`
       SELECT p.*,
-        array_agg(DISTINCT pa.amenity) FILTER (WHERE pa.amenity IS NOT NULL) as amenities,
+        p.amenities,
         json_agg(DISTINCT jsonb_build_object(
           'id', pr.id, 'name', pr.name, 'description', pr.description,
           'price_per_night', pr.price_per_night, 'max_guests', pr.max_guests,
           'quantity', pr.quantity, 'amenities', pr.amenities, 'images', pr.images
         )) FILTER (WHERE pr.id IS NOT NULL) as rooms
       FROM properties p
-      LEFT JOIN property_amenities pa ON pa.property_id = p.id
+
       LEFT JOIN property_rooms pr ON pr.property_id = p.id
       WHERE p.id = $1
       GROUP BY p.id
@@ -230,7 +230,7 @@ router.post('/', auth, async (req, res) => {
     // Add amenities
     if (amenities && amenities.length > 0) {
       for (const amenity of amenities) {
-        await db.query('INSERT INTO property_amenities (property_id, amenity) VALUES ($1,$2)', [result.rows[0].id, amenity]);
+        await db.query('UPDATE properties SET amenities = $1 WHERE id = $2', [amenities, result.rows[0].id]);;
       }
     }
     // Add room types
