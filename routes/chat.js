@@ -1,4 +1,19 @@
 const router = require('express').Router();
+const axios = require('axios');
+
+async function sendPushNotification(toToken, title, body, data = {}) {
+  if (!toToken || !toToken.startsWith('ExponentPushToken')) return;
+  try {
+    await axios.post('https://exp.host/--/api/v2/push/send', {
+      to: toToken,
+      title,
+      body,
+      data,
+      sound: 'default',
+      badge: 1,
+    }, { headers: { 'Content-Type': 'application/json' } });
+  } catch (e) { console.log('Push error:', e.message); }
+}
 const db = require('../db');
 const auth = require('../middleware/auth');
 const { db: firebase } = require('../services/firebase');
@@ -165,6 +180,17 @@ router.post('/social/:friend_id/send', auth, async (req, res) => {
     };
 
     const msgRef = await firebase.ref(`chats/${chatId}/messages`).push(message);
+
+    // Send push notification to friend
+    try {
+      const friendData = await db.query('SELECT fcm_token, full_name FROM users WHERE id=$1', [friend_id]);
+      const friend = friendData.rows[0];
+      if (friend?.fcm_token) {
+        const senderData = await db.query('SELECT full_name FROM users WHERE id=$1', [req.user.id]);
+        const senderName = senderData.rows[0]?.full_name || 'Someone';
+        await sendPushNotification(friend.fcm_token, senderName, text || 'Shared something with you', { type: 'chat', chat_id: chatId, sender_id: req.user.id });
+      }
+    } catch (e) { console.log('Push notification error:', e.message); }
 
     // Update last message
     await firebase.ref(`chats/${chatId}/metadata`).update({
