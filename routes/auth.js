@@ -81,7 +81,7 @@ router.post('/verify-email', require('../middleware/auth'), async (req, res) => 
 // POST /api/auth/vendor/register
 router.post('/vendor/register', async (req, res) => {
   try {
-    const { business_name, email, phone, password, owner_full_name, cac_number, business_address, owner_bvn } = req.body;
+    const { business_name, email, phone, password, owner_full_name, cac_number, business_address, owner_bvn, business_types = ['restaurant'] } = req.body;
     if (!business_name || !email || !password)
       return res.status(400).json({ error: 'Business name, email and password are required.' });
     const exists = await db.query('SELECT id FROM vendors WHERE email=$1', [email.trim().toLowerCase()]);
@@ -112,9 +112,9 @@ router.post('/vendor/register', async (req, res) => {
 
     const password_hash = await bcrypt.hash(password, 12);
     const result = await db.query(
-      `INSERT INTO vendors (business_name, email, phone, password_hash, is_verified, owner_full_name, cac_number, business_address, owner_bvn, kyc_status, kyc_submitted_at, latitude, longitude, address_verified)
-       VALUES ($1,$2,$3,$4,false,$5,$6,$7,$8,$9,NOW(),$10,$11,$12) RETURNING *`,
-      [business_name.trim(), email.trim().toLowerCase(), phone || null, password_hash, owner_full_name || null, cac_number || null, business_address || null, owner_bvn || null, kyc_status, latitude, longitude, address_verified]
+      `INSERT INTO vendors (business_name, email, phone, password_hash, is_verified, owner_full_name, cac_number, business_address, owner_bvn, kyc_status, kyc_submitted_at, latitude, longitude, address_verified, business_types, is_property_host, is_event_organizer)
+       VALUES ($1,$2,$3,$4,false,$5,$6,$7,$8,$9,NOW(),$10,$11,$12,$13,$14,$15) RETURNING *`,
+      [business_name.trim(), email.trim().toLowerCase(), phone || null, password_hash, owner_full_name || null, cac_number || null, business_address || null, owner_bvn || null, kyc_status, latitude, longitude, address_verified, business_types, business_types.includes('property'), business_types.includes('events')]
     );
     const vendor = result.rows[0];
     const token = jwt.sign({ id: vendor.id, role: 'vendor' }, process.env.JWT_SECRET, { expiresIn: '30d' });
