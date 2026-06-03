@@ -254,3 +254,19 @@ router.patch("/events/:id/reject", async (req, res) => {
     res.json({ message: "Event rejected." });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
+// PATCH /api/admin/properties/:id/approve
+router.patch("/properties/:id/approve", async (req, res) => {
+  try {
+    await db.query("UPDATE properties SET status='approved', is_live=true, is_verified=true WHERE id=$1", [req.params.id]);
+    res.json({ message: "Property approved and live!" });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/admin/properties/:id/reject  
+router.patch("/properties/:id/reject", async (req, res) => {
+  try {
+    await db.query("UPDATE properties SET status='rejected', is_live=false WHERE id=$1", [req.params.id]);
+    res.json({ message: "Property rejected." });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
