@@ -191,6 +191,52 @@ router.post('/:id/review', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/properties/my — vendor's own properties
+router.get('/my', auth, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT p.*, COUNT(pb.id) as total_bookings, 
+        COALESCE(SUM(pb.total_amount) FILTER (WHERE pb.payment_status='paid'), 0) as total_revenue
+       FROM properties p
+       LEFT JOIN property_bookings pb ON pb.property_id = p.id
+       WHERE p.host_id = $1
+       GROUP BY p.id ORDER BY p.created_at DESC`,
+      [req.user.id]
+    );
+    res.json({ properties: result.rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/properties — create property (hosts only)
+router.post('/', auth, async (req, res) => {
+  try {
+    const vendor = await db.query('SELECT business_types FROM vendors WHERE id=$1', [req.user.id]);
+    if (!vendor.rows[0] || !vendor.rows[0].business_types?.includes('property')) {
+      return res.status(403).json({ error: 'Property host account required.' });
+    }
+    const { type, name, description, address, neighbourhood, bedrooms, bathrooms, max_guests,
+      base_price_per_night, weekend_price, min_stay_nights, check_in_time, check_out_time,
+      cancellation_policy, house_rules, cover_image, images, amenities } = req.body;
+    const result = await db.query(
+      `INSERT INTO properties (host_id, type, name, description, address, neighbourhood,
+        bedrooms, bathrooms, max_guests, base_price_per_night, weekend_price, min_stay_nights,
+        check_in_time, check_out_time, cancellation_policy, house_rules, cover_image, images, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,'pending') RETURNING *`,
+      [req.user.id, type, name, description, address, neighbourhood, bedrooms||1, bathrooms||1,
+       max_guests||2, base_price_per_night, weekend_price||null, min_stay_nights||1,
+       check_in_time||'14:00', check_out_time||'11:00', cancellation_policy||'moderate',
+       house_rules||null, cover_image||null, images||null]
+    );
+    // Add amenities
+    if (amenities && amenities.length > 0) {
+      for (const amenity of amenities) {
+        await db.query('INSERT INTO property_amenities (property_id, amenity) VALUES ($1,$2)', [result.rows[0].id, amenity]);
+      }
+    }
+    res.json({ property: result.rows[0] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // GET /api/properties/admin/all
 router.get('/admin/all', auth, async (req, res) => {
   try {
