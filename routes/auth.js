@@ -190,7 +190,7 @@ router.patch("/profile", auth, async (req, res) => {
         username = COALESCE($1, username),
         bio = COALESCE($2, bio),
         updated_at = NOW()
-       WHERE id=$3 RETURNING id, full_name, email, username, bio, citypulse_id, avatar_url, wallet_balance, cpp_points, cpp_tier, neighbourhood`,
+       WHERE id=$3 RETURNING id, full_name, email, phone, username, bio, citypulse_id, avatar_url, wallet_balance, cpp_points, cpp_tier, neighbourhood, city`,
       [username || null, bio || null, req.user.id]
     );
     res.json({ user: result.rows[0] });
