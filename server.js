@@ -51,3 +51,4 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`CityPulse API running on port ${PORT}`));
 
+app.get("/version", (req, res) => res.json({ version: "2.1.0", routes: ["properties", "chat", "events"] }));
