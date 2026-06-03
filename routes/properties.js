@@ -45,6 +45,18 @@ router.get('/', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── MY BOOKINGS ──────────────────────────────────────────
+router.get('/my/bookings', auth, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT pb.*, p.name as property_name, p.cover_image, p.address, p.neighbourhood, p.type
+      FROM property_bookings pb
+      JOIN properties p ON pb.property_id = p.id
+      WHERE pb.user_id = $1
+      ORDER BY pb.created_at DESC
+    `, [req.user.id]);
+    res.json({ bookings: result.rows });
+
 // ── SINGLE PROPERTY ──────────────────────────────────────
 router.get('/:id', async (req, res) => {
   try {
@@ -169,17 +181,6 @@ router.post('/:id/book', auth, async (req, res) => {
   } finally { client.release(); }
 });
 
-// ── MY BOOKINGS ──────────────────────────────────────────
-router.get('/my/bookings', auth, async (req, res) => {
-  try {
-    const result = await db.query(`
-      SELECT pb.*, p.name as property_name, p.cover_image, p.address, p.neighbourhood, p.type
-      FROM property_bookings pb
-      JOIN properties p ON pb.property_id = p.id
-      WHERE pb.user_id = $1
-      ORDER BY pb.created_at DESC
-    `, [req.user.id]);
-    res.json({ bookings: result.rows });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -248,6 +249,7 @@ router.post('/:id/review', auth, async (req, res) => {
 
 // ── ADMIN: GET ALL PROPERTIES ────────────────────────────
 router.get('/admin/all', auth, async (req, res) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required.' });
   try {
     const result = await db.query(`
       SELECT p.*, v.business_name as host_name

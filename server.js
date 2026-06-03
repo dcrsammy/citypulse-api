@@ -18,6 +18,9 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 1000 }));
+// Stricter rate limit for auth routes
+app.use('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 20, message: { error: 'Too many login attempts. Try again in 15 minutes.' } }));
+app.use('/api/auth/register', rateLimit({ windowMs: 60 * 60 * 1000, max: 10, message: { error: 'Too many registration attempts.' } }));
 app.use("/api/auth",          require("./routes/auth"));
 app.use("/api/venues",        require("./routes/venues"));
 app.use("/api/events",        require("./routes/events"));
