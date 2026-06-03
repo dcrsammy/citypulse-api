@@ -38,6 +38,7 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok", service: "CityPulse API", version: "1.0.0" });
 });
 app.use("/api/analytics", require("./routes/analytics"));
+app.use("/api/properties", require("./routes/properties"));
 app.use("/api/chat",      require("./routes/chat"));
 app.use((req, res) => res.status(404).json({ error: "Route not found" }));
 app.use((err, req, res, next) => {
