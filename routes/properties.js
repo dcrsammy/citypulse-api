@@ -216,7 +216,7 @@ router.post('/', auth, async (req, res) => {
     }
     const { type, name, description, address, neighbourhood, bedrooms, bathrooms, max_guests,
       base_price_per_night, weekend_price, min_stay_nights, check_in_time, check_out_time,
-      cancellation_policy, house_rules, cover_image, images, amenities } = req.body;
+      cancellation_policy, house_rules, cover_image, images, amenities, rooms } = req.body;
     const result = await db.query(
       `INSERT INTO properties (host_id, type, name, description, address, neighbourhood,
         bedrooms, bathrooms, max_guests, base_price_per_night, weekend_price, min_stay_nights,
@@ -231,6 +231,17 @@ router.post('/', auth, async (req, res) => {
     if (amenities && amenities.length > 0) {
       for (const amenity of amenities) {
         await db.query('INSERT INTO property_amenities (property_id, amenity) VALUES ($1,$2)', [result.rows[0].id, amenity]);
+      }
+    }
+    // Add room types
+    if (rooms && rooms.length > 0) {
+      for (const room of rooms) {
+        if (room.name && room.price_per_night) {
+          await db.query(
+            'INSERT INTO property_rooms (property_id, name, description, price_per_night, max_guests, quantity) VALUES ($1,$2,$3,$4,$5,$6)',
+            [result.rows[0].id, room.name, room.description||null, room.price_per_night, room.max_guests||2, room.quantity||1]
+          );
+        }
       }
     }
     res.json({ property: result.rows[0] });
