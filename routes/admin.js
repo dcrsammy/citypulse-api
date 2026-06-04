@@ -209,13 +209,12 @@ router.get("/events", async (req, res) => {
   try {
     const result = await db.query(`
       SELECT e.*,
-        COALESCE(eo.full_name, vn.business_name) as organizer_name,
+        vn.business_name as organizer_name,
         json_agg(t) FILTER (WHERE t.id IS NOT NULL) as ticket_types
       FROM events e
-      LEFT JOIN event_organizers eo ON e.organizer_id = eo.id
       LEFT JOIN vendors vn ON e.vendor_id = vn.id
       LEFT JOIN event_ticket_types t ON t.event_id = e.id
-      GROUP BY e.id, eo.full_name, vn.business_name
+      GROUP BY e.id, vn.business_name
       ORDER BY e.created_at DESC
     `);
     res.json({ events: result.rows });
@@ -253,3 +252,5 @@ router.patch("/properties/:id/reject", async (req, res) => {
     res.json({ message: "Property rejected." });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
+module.exports = router;
