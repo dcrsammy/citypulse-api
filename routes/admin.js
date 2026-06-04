@@ -34,7 +34,7 @@ router.use(auth, adminAuth);
 router.get("/stats", async (req, res) => {
   try {
     const pending = await db.query("SELECT COUNT(*) as count FROM venues WHERE is_live=false");
-    const kyc = await db.query("SELECT COUNT(*) as count FROM vendors WHERE kyc_status='pending'");
+    const kyc = await db.query("SELECT COUNT(*) as count FROM vendor_kyc WHERE kyc_status='pending'");
     const stats = await db.query(`
       SELECT
         (SELECT COUNT(*) FROM users) as total_users,
@@ -156,24 +156,7 @@ router.get("/disputes", async (req, res) => {
 });
 
 // Approve venue
-router.patch("/venues/:id/approve", async (req, res) => {
-  try {
-    await db.query("UPDATE venues SET is_live=true, is_verified=true WHERE id=$1", [req.params.id]);
-    res.json({ message: "Venue approved and live!" });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
-// Reject venue
-router.patch("/venues/:id/reject", async (req, res) => {
-  try {
-    await db.query("UPDATE venues SET is_live=false, is_verified=false WHERE id=$1", [req.params.id]);
-    res.json({ message: "Venue rejected." });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // Get all orders
 router.get("/orders", async (req, res) => {
