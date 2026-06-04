@@ -102,7 +102,7 @@ router.get("/:id", async (req, res) => {
     const result = await db.query(
       `SELECT e.*,
         COALESCE(eo.business_name, v.name) as organizer_name,
-        eo.bio as organizer_bio, eo.profile_image as organizer_image,
+        NULL as organizer_bio, NULL as organizer_image,
         v.name as venue_name, v.address, v.neighbourhood, v.latitude, v.longitude,
         json_agg(
           DISTINCT jsonb_build_object(
