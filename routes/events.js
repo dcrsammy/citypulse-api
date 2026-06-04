@@ -21,7 +21,7 @@ router.get("/", async (req, res) => {
           )
         ) FILTER (WHERE t.id IS NOT NULL) as ticket_types
       FROM events e
-      LEFT JOIN event_organizers eo ON e.organizer_id = eo.id
+      LEFT JOIN vendors eo ON e.organizer_id = eo.id
       LEFT JOIN venues v ON e.venue_id = v.id
       LEFT JOIN event_ticket_types t ON t.event_id = e.id
       WHERE e.status = 'approved' AND e.event_date >= CURRENT_DATE`;
@@ -116,7 +116,7 @@ router.get("/:id", async (req, res) => {
           )
         ) FILTER (WHERE t.id IS NOT NULL) as ticket_types
        FROM events e
-       LEFT JOIN event_organizers eo ON e.organizer_id = eo.id
+       LEFT JOIN vendors eo ON e.organizer_id = eo.id
        LEFT JOIN venues v ON e.venue_id = v.id
        LEFT JOIN event_ticket_types t ON t.event_id = e.id
        WHERE e.id=$1
