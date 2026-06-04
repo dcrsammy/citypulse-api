@@ -60,8 +60,9 @@ router.post("/redeem-wallet", auth, async (req, res) => {
       [req.user.id, -cpp_amount]
     );
     await client.query(
-      `INSERT INTO wallet_transactions (user_id,type,amount,balance_after,description,status)
-       VALUES ($1,'cpp_redemption',$2,wallet_balance+$2,'CPP Points Redemption','completed')`,
+`INSERT INTO wallet_transactions (user_id,type,amount,balance_after,description,status)
+       SELECT $1,'cpp_redemption',$2, wallet_balance,'CPP Points Redemption','completed'
+       FROM users WHERE id=$1`,
       [req.user.id, naira_credit]
     );
     await client.query('COMMIT');
