@@ -53,7 +53,7 @@ router.post("/login", async (req, res) => {
 router.get("/me", auth, async (req, res) => {
   try {
     const result = await db.query(
-      "SELECT id, business_name, owner_full_name, email, kyc_status, is_verified FROM vendors WHERE id=$1",
+      "SELECT id, business_name, owner_full_name, email, kyc_status, is_verified, business_types, is_property_host, is_event_organizer, phone, payout_bank, payout_account, payout_account_name, payout_bank_name, available_payout FROM vendors WHERE id=$1",
       [req.user.id]
     );
     
