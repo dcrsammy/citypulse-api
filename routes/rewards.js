@@ -35,4 +35,49 @@ router.post("/redeem", auth, async (req, res) => {
   }
 });
 
+// POST /api/rewards/redeem-wallet — 1000 CPP = ₦1,000 wallet credit
+router.post("/redeem-wallet", auth, async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    const { cpp_amount } = req.body; // must be multiple of 1000
+    if (!cpp_amount || cpp_amount < 1000 || cpp_amount % 1000 !== 0)
+      return res.status(400).json({ error: 'Minimum redemption is 1,000 CPP. Must be in multiples of 1,000.' });
+
+    const userRes = await client.query('SELECT cpp_points, wallet_balance FROM users WHERE id=$1', [req.user.id]);
+    const user = userRes.rows[0];
+    if (user.cpp_points < cpp_amount)
+      return res.status(400).json({ error: `Insufficient CPP. You have ${user.cpp_points} CPP.` });
+
+    const naira_credit = cpp_amount; // 1 CPP = ₦1
+
+    await client.query('BEGIN');
+    await client.query(
+      'UPDATE users SET cpp_points=cpp_points-$1, wallet_balance=wallet_balance+$2 WHERE id=$3',
+      [cpp_amount, naira_credit, req.user.id]
+    );
+    await client.query(
+      `INSERT INTO cpp_transactions (user_id,type,amount,description) VALUES ($1,'redeem',$2,'Redeemed for wallet credit')`,
+      [req.user.id, -cpp_amount]
+    );
+    await client.query(
+      `INSERT INTO wallet_transactions (user_id,type,amount,balance_after,description,status)
+       VALUES ($1,'cpp_redemption',$2,wallet_balance+$2,'CPP Points Redemption','completed')`,
+      [req.user.id, naira_credit]
+    );
+    await client.query('COMMIT');
+
+    const updated = await client.query('SELECT cpp_points, wallet_balance FROM users WHERE id=$1', [req.user.id]);
+    res.json({
+      success: true,
+      cpp_deducted: cpp_amount,
+      naira_credited: naira_credit,
+      new_cpp_balance: updated.rows[0].cpp_points,
+      new_wallet_balance: updated.rows[0].wallet_balance
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally { client.release(); }
+});
+
 module.exports = router;
