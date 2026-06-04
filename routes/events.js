@@ -9,7 +9,7 @@ router.get("/", async (req, res) => {
     const { category, date, free, limit = 20, offset = 0 } = req.query;
     let query = `
       SELECT e.*, 
-        COALESCE(eo.full_name, v.name) as organizer_name,
+        COALESCE(eo.business_name, v.name) as organizer_name,
         v.name as venue_name, v.neighbourhood, v.address, v.latitude, v.longitude,
         json_agg(
           json_build_object(
@@ -32,7 +32,7 @@ router.get("/", async (req, res) => {
     if (date) { query += ` AND e.event_date=$${i++}`; params.push(date); }
     if (free === "true") { query += ` AND e.is_free=true`; }
 
-    query += ` GROUP BY e.id, eo.full_name, v.name, v.neighbourhood, v.address, v.latitude, v.longitude, v.city
+    query += ` GROUP BY e.id, eo.business_name, v.name, v.neighbourhood, v.address, v.latitude, v.longitude, v.city
                ORDER BY e.is_featured DESC, e.event_date ASC
                LIMIT $${i} OFFSET $${i+1}`;
     params.push(parseInt(limit), parseInt(offset));
@@ -101,7 +101,7 @@ router.get("/:id", async (req, res) => {
   try {
     const result = await db.query(
       `SELECT e.*,
-        COALESCE(eo.full_name, v.name) as organizer_name,
+        COALESCE(eo.business_name, v.name) as organizer_name,
         eo.bio as organizer_bio, eo.profile_image as organizer_image,
         v.name as venue_name, v.address, v.neighbourhood, v.latitude, v.longitude,
         json_agg(
@@ -120,7 +120,7 @@ router.get("/:id", async (req, res) => {
        LEFT JOIN venues v ON e.venue_id = v.id
        LEFT JOIN event_ticket_types t ON t.event_id = e.id
        WHERE e.id=$1
-       GROUP BY e.id, eo.full_name, eo.bio, eo.profile_image, v.name, v.address, v.neighbourhood, v.latitude, v.longitude`,
+       GROUP BY e.id, eo.business_name, eo.bio, eo.profile_image, v.name, v.address, v.neighbourhood, v.latitude, v.longitude`,
       [req.params.id]
     );
     if (!result.rows[0]) return res.status(404).json({ error: "Event not found." });
