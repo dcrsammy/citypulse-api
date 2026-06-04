@@ -189,6 +189,41 @@ router.get('/me', require('../middleware/auth'), async (req, res) => {
   }
 });
 
+// GET /api/auth/addresses
+router.get('/addresses', auth, async (req, res) => {
+  try {
+    const result = await db.query(
+      'SELECT * FROM user_addresses WHERE user_id=$1 ORDER BY is_default DESC, created_at DESC',
+      [req.user.id]
+    );
+    res.json({ addresses: result.rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/auth/addresses
+router.post('/addresses', auth, async (req, res) => {
+  try {
+    const { label, address, lat, lng, is_default } = req.body;
+    if (!address) return res.status(400).json({ error: 'Address is required.' });
+    if (is_default) {
+      await db.query('UPDATE user_addresses SET is_default=false WHERE user_id=$1', [req.user.id]);
+    }
+    const result = await db.query(
+      'INSERT INTO user_addresses (user_id, label, address, lat, lng, is_default) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *',
+      [req.user.id, label || 'home', address, lat || null, lng || null, is_default || false]
+    );
+    res.json({ address: result.rows[0] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /api/auth/addresses/:id
+router.delete('/addresses/:id', auth, async (req, res) => {
+  try {
+    await db.query('DELETE FROM user_addresses WHERE id=$1 AND user_id=$2', [req.params.id, req.user.id]);
+    res.json({ message: 'Address deleted.' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = router;
 
 
