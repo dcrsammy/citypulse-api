@@ -283,3 +283,18 @@ router.post("/payout/request", auth, async (req, res) => {
 });
 
 module.exports = router;
+
+// PATCH /api/vendor/me - Update vendor profile
+router.patch("/me", auth, async (req, res) => {
+  try {
+    const { business_name, phone } = req.body;
+    const result = await db.query(
+      `UPDATE vendors SET 
+        business_name = COALESCE($1, business_name),
+        phone = COALESCE($2, phone)
+       WHERE id=$3 RETURNING id, business_name, email, phone, is_verified, business_types`,
+      [business_name || null, phone || null, req.user.id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
