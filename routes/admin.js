@@ -39,12 +39,31 @@ router.get("/stats", async (req, res) => {
       SELECT
         (SELECT COUNT(*) FROM users) as total_users,
         (SELECT COUNT(*) FROM vendors WHERE is_verified=true) as active_vendors,
-        (SELECT COUNT(*) FROM venues WHERE is_live=true) as live_venues
+        (SELECT COUNT(*) FROM venues WHERE is_live=true) as live_venues,
+        (SELECT COUNT(*) FROM properties WHERE status='approved' AND is_live=true) as live_properties,
+        (SELECT COUNT(*) FROM events WHERE status='approved' AND is_live=true) as live_events,
+        (SELECT COUNT(*) FROM food_orders WHERE payment_status='paid') as total_orders,
+        (SELECT COUNT(*) FROM property_bookings WHERE payment_status='paid') as total_stays,
+        (SELECT COUNT(*) FROM event_purchases WHERE payment_status='paid') as total_tickets,
+        (SELECT COALESCE(SUM(total_amount),0) FROM food_orders WHERE payment_status='paid') as food_revenue,
+        (SELECT COALESCE(SUM(total_amount),0) FROM property_bookings WHERE payment_status='paid') as stays_revenue,
+        (SELECT COALESCE(SUM(total_amount),0) FROM event_purchases WHERE payment_status='paid') as events_revenue
     `);
+    const s = stats.rows[0];
+    const total_revenue = parseFloat(s.food_revenue||0) + parseFloat(s.stays_revenue||0) + parseFloat(s.events_revenue||0);
     res.json({
-      total_users: stats.rows[0].total_users,
-      active_vendors: stats.rows[0].active_vendors,
-      live_venues: stats.rows[0].live_venues,
+      total_users: s.total_users,
+      active_vendors: s.active_vendors,
+      live_venues: s.live_venues,
+      live_properties: s.live_properties,
+      live_events: s.live_events,
+      total_orders: s.total_orders,
+      total_stays: s.total_stays,
+      total_tickets: s.total_tickets,
+      total_revenue,
+      food_revenue: s.food_revenue,
+      stays_revenue: s.stays_revenue,
+      events_revenue: s.events_revenue,
       pending_approval: pending.rows[0].count,
       kyc_pending: kyc.rows[0].count
     });
