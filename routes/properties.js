@@ -262,3 +262,19 @@ router.get('/admin/all', auth, async (req, res) => {
 });
 
 module.exports = router;
+
+// GET /api/properties/host/bookings — all bookings for host's properties
+router.get('/host/bookings', auth, async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT pb.*, p.name as property_name, p.address,
+        u.full_name as guest_name, u.phone as guest_phone, u.email as guest_email
+      FROM property_bookings pb
+      JOIN properties p ON pb.property_id = p.id
+      JOIN users u ON pb.user_id = u.id
+      WHERE p.host_id = $1
+      ORDER BY pb.created_at DESC
+    `, [req.user.id]);
+    res.json({ bookings: result.rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
