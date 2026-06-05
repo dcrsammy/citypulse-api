@@ -148,11 +148,38 @@ router.get("/users", async (req, res) => {
 
 router.get("/disputes", async (req, res) => {
   try {
-    const result = await db.query("SELECT * FROM food_orders WHERE disputed=true ORDER BY created_at DESC");
+    const result = await db.query(`
+      SELECT d.*, u.full_name as user_name, u.email as user_email, u.phone as user_phone
+      FROM disputes d
+      LEFT JOIN users u ON d.user_id = u.id
+      ORDER BY d.created_at DESC
+    `);
     res.json({ disputes: result.rows || [] });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/admin/disputes/:id/resolve
+router.patch("/disputes/:id/resolve", async (req, res) => {
+  try {
+    const { admin_notes } = req.body;
+    await db.query(
+      "UPDATE disputes SET status='resolved', admin_notes=$1, resolved_at=NOW() WHERE id=$2",
+      [admin_notes || null, req.params.id]
+    );
+    res.json({ message: 'Dispute resolved.' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/admin/disputes/:id/close
+router.patch("/disputes/:id/close", async (req, res) => {
+  try {
+    const { admin_notes } = req.body;
+    await db.query(
+      "UPDATE disputes SET status='closed', admin_notes=$1, resolved_at=NOW() WHERE id=$2",
+      [admin_notes || null, req.params.id]
+    );
+    res.json({ message: 'Dispute closed.' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // Approve venue
