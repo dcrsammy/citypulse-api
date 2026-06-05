@@ -19,6 +19,12 @@ router.post('/register', async (req, res) => {
     );
     const user = result.rows[0];
     const token = jwt.sign({ id: user.id, role: 'consumer' }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    // Single device: store active token, invalidate previous
+    const deviceInfo = req.headers['user-agent']?.slice(0,100) || 'unknown';
+    await db.query(
+      'UPDATE users SET active_token=$1, last_login_at=NOW(), last_login_device=$2 WHERE id=$3',
+      [token, deviceInfo, user.id]
+    );
     res.status(201).json({ token, user });
   } catch (err) {
     res.status(500).json({ error: err.message });
