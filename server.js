@@ -43,6 +43,7 @@ app.get("/health", (req, res) => {
 app.use("/api/analytics", require("./routes/analytics"));
 app.use("/api/properties", require("./routes/properties"));
 app.use("/api/chat",      require("./routes/chat"));
+app.use("/api/disputes", require("./routes/disputes"));
 app.get("/version", (req, res) => res.json({ version: "2.1.0", routes: ["properties", "chat", "events"] }));
 app.use((req, res) => res.status(404).json({ error: "Route not found" }));
 app.use((err, req, res, next) => {
