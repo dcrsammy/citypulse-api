@@ -366,6 +366,7 @@ router.post("/scan-ticket", auth, async (req, res) => {
   try {
     const { qr_code } = req.body;
     if (!qr_code) return res.status(400).json({ error: "QR code required." });
+    // Support both short QR (CPTKT-XXXX) and full ticket ID
     const result = await db.query(`
       SELECT et.*, e.title as event_title, e.event_date,
         u.full_name as guest_name, tt.name as ticket_type
@@ -373,8 +374,10 @@ router.post("/scan-ticket", auth, async (req, res) => {
       JOIN events e ON et.event_id = e.id
       JOIN users u ON et.user_id = u.id
       JOIN event_ticket_types tt ON et.ticket_type_id = tt.id
-      WHERE et.qr_code = $1
-    `, [qr_code]);
+      WHERE et.qr_code = $1 
+         OR et.id::text ILIKE $2
+         OR 'CPTKT-' || UPPER(SPLIT_PART(et.id::text, '-', 1)) = $1
+    `, [qr_code, qr_code.replace('CPTKT-','') + '%']);
     if (!result.rows[0]) return res.status(404).json({ error: "Invalid ticket." });
     const ticket = result.rows[0];
     if (ticket.is_used) return res.status(400).json({ error: "Ticket already used.", ticket });
