@@ -419,3 +419,22 @@ router.patch("/property-bookings/:id/cancel", auth, async (req, res) => {
 });
 
 module.exports = router;
+
+// POST /api/vendor/scan-stay — verify property booking
+router.post("/scan-stay", auth, async (req, res) => {
+  try {
+    const { qr_code } = req.body;
+    if (!qr_code) return res.status(400).json({ error: "QR code required." });
+    const result = await db.query(`
+      SELECT pb.*, p.name as property_name, p.address,
+        u.full_name as guest_name, u.phone as guest_phone
+      FROM property_bookings pb
+      JOIN properties p ON pb.property_id = p.id
+      JOIN users u ON pb.user_id = u.id
+      WHERE pb.qr_code = $1
+    `, [qr_code]);
+    if (!result.rows[0]) return res.status(404).json({ error: "Invalid booking QR." });
+    const booking = result.rows[0];
+    res.json({ valid: true, message: "Booking verified!", booking });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
