@@ -282,14 +282,12 @@ router.post("/payout/request", auth, async (req, res) => {
   }
 });
 
-module.exports = router;
-
 // PATCH /api/vendor/me - Update vendor profile
 router.patch("/me", auth, async (req, res) => {
   try {
     const { business_name, phone } = req.body;
     const result = await db.query(
-      `UPDATE vendors SET 
+      `UPDATE vendors SET
         business_name = COALESCE($1, business_name),
         phone = COALESCE($2, phone)
        WHERE id=$3 RETURNING id, business_name, email, phone, is_verified, business_types`,
@@ -298,3 +296,123 @@ router.patch("/me", auth, async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
+// GET /api/vendor/dashboard — role-aware summary
+router.get("/dashboard", auth, async (req, res) => {
+  try {
+    const vendorRes = await db.query(
+      "SELECT business_types, is_property_host, is_event_organizer FROM vendors WHERE id=$1",
+      [req.user.id]
+    );
+    if (!vendorRes.rows[0]) return res.status(404).json({ error: "Vendor not found." });
+    const { business_types = [], is_property_host, is_event_organizer } = vendorRes.rows[0];
+
+    const dashboard = { business_types };
+
+    // Food/restaurant stats
+    if (business_types.includes("restaurant") || business_types.includes("bar") || business_types.includes("cafe")) {
+      const venuesRes = await db.query("SELECT id FROM venues WHERE vendor_id=$1", [req.user.id]);
+      const venueIds = venuesRes.rows.map(v => v.id);
+      if (venueIds.length > 0) {
+        const stats = await db.query(`
+          SELECT
+            COUNT(*) FILTER (WHERE payment_status='paid') as total_orders,
+            COALESCE(SUM(total_amount) FILTER (WHERE payment_status='paid'), 0) as total_revenue,
+            COUNT(*) FILTER (WHERE order_status='pending') as pending_orders,
+            COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '7 days' AND payment_status='paid') as orders_this_week
+          FROM food_orders WHERE venue_id = ANY($1)
+        `, [venueIds]);
+        dashboard.food = stats.rows[0];
+        dashboard.venues = venuesRes.rows.length;
+      }
+    }
+
+    // Property/hotel stats
+    if (is_property_host || business_types.includes("property")) {
+      const stats = await db.query(`
+        SELECT
+          COUNT(p.id) as total_properties,
+          COUNT(pb.id) FILTER (WHERE pb.booking_status='confirmed') as active_bookings,
+          COALESCE(SUM(pb.total_amount) FILTER (WHERE pb.payment_status='paid'), 0) as total_revenue,
+          COUNT(pb.id) FILTER (WHERE pb.booking_status='pending') as pending_bookings
+        FROM properties p
+        LEFT JOIN property_bookings pb ON pb.property_id = p.id
+        WHERE p.host_id = $1
+      `, [req.user.id]);
+      dashboard.properties = stats.rows[0];
+    }
+
+    // Events stats
+    if (is_event_organizer || business_types.includes("events")) {
+      const stats = await db.query(`
+        SELECT
+          COUNT(e.id) as total_events,
+          COUNT(ep.id) FILTER (WHERE ep.payment_status='paid') as tickets_sold,
+          COALESCE(SUM(ep.total_amount) FILTER (WHERE ep.payment_status='paid'), 0) as total_revenue,
+          COUNT(e.id) FILTER (WHERE e.is_live=true) as live_events
+        FROM events e
+        LEFT JOIN event_purchases ep ON ep.event_id = e.id
+        WHERE e.vendor_id = $1
+      `, [req.user.id]);
+      dashboard.events = stats.rows[0];
+    }
+
+    res.json(dashboard);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/vendor/scan-ticket — verify event ticket
+router.post("/scan-ticket", auth, async (req, res) => {
+  try {
+    const { qr_code } = req.body;
+    if (!qr_code) return res.status(400).json({ error: "QR code required." });
+    const result = await db.query(`
+      SELECT et.*, e.title as event_title, e.event_date,
+        u.full_name as guest_name, tt.name as ticket_type
+      FROM event_tickets et
+      JOIN events e ON et.event_id = e.id
+      JOIN users u ON et.user_id = u.id
+      JOIN event_ticket_types tt ON et.ticket_type_id = tt.id
+      WHERE et.qr_code = $1
+    `, [qr_code]);
+    if (!result.rows[0]) return res.status(404).json({ error: "Invalid ticket." });
+    const ticket = result.rows[0];
+    if (ticket.is_used) return res.status(400).json({ error: "Ticket already used.", ticket });
+    // Mark as used
+    await db.query("UPDATE event_tickets SET is_used=true, used_at=NOW() WHERE id=$1", [ticket.id]);
+    res.json({ valid: true, message: "Ticket verified!", ticket });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/vendor/scan-order — mark food order as picked up
+router.post("/scan-order", auth, async (req, res) => {
+  try {
+    const { qr_code } = req.body;
+    if (!qr_code) return res.status(400).json({ error: "QR code required." });
+    const result = await db.query(
+      "SELECT * FROM food_orders WHERE qr_code=$1", [qr_code]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: "Invalid QR code." });
+    const order = result.rows[0];
+    if (order.order_status === 'completed') return res.status(400).json({ error: "Order already completed.", order });
+    await db.query(
+      "UPDATE food_orders SET order_status='completed', picked_up_at=NOW() WHERE id=$1",
+      [order.id]
+    );
+    res.json({ valid: true, message: "Order marked as completed!", order });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/vendor/property-bookings/:id/cancel — cancel property booking
+router.patch("/property-bookings/:id/cancel", auth, async (req, res) => {
+  try {
+    const { reason } = req.body;
+    await db.query(
+      "UPDATE property_bookings SET booking_status='cancelled', cancellation_reason=$1, cancelled_at=NOW() WHERE id=$2",
+      [reason || 'Cancelled by host', req.params.id]
+    );
+    res.json({ message: "Booking cancelled." });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+module.exports = router;

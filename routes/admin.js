@@ -248,8 +248,6 @@ router.patch("/vendors/:id/verify", async (req, res) => {
   }
 });
 
-module.exports = router;
-
 // GET /api/admin/events
 router.get("/events", async (req, res) => {
   try {
@@ -291,12 +289,89 @@ router.patch("/properties/:id/approve", async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// PATCH /api/admin/properties/:id/reject  
+// PATCH /api/admin/properties/:id/reject
 router.patch("/properties/:id/reject", async (req, res) => {
   try {
     await db.query("UPDATE properties SET status='rejected', is_live=false WHERE id=$1", [req.params.id]);
     res.json({ message: "Property rejected." });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/admin/users/:id/suspend
+router.patch("/users/:id/suspend", async (req, res) => {
+  try {
+    await db.query("UPDATE users SET is_suspended=true WHERE id=$1", [req.params.id]);
+    res.json({ message: "User suspended." });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/admin/users/:id/unsuspend
+router.patch("/users/:id/unsuspend", async (req, res) => {
+  try {
+    await db.query("UPDATE users SET is_suspended=false WHERE id=$1", [req.params.id]);
+    res.json({ message: "User unsuspended." });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /api/admin/venues/:id
+router.delete("/venues/:id", async (req, res) => {
+  try {
+    await db.query("UPDATE venues SET is_live=false, is_deleted=true WHERE id=$1", [req.params.id]);
+    res.json({ message: "Venue removed." });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/admin/venues/:id — edit venue details
+router.patch("/venues/:id", async (req, res) => {
+  try {
+    const { name, category, neighbourhood, description } = req.body;
+    await db.query(
+      "UPDATE venues SET name=COALESCE($1,name), category=COALESCE($2,category), neighbourhood=COALESCE($3,neighbourhood), description=COALESCE($4,description) WHERE id=$5",
+      [name||null, category||null, neighbourhood||null, description||null, req.params.id]
+    );
+    res.json({ message: "Venue updated." });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/admin/property-bookings
+router.get("/property-bookings", async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT pb.*, p.name as property_name, p.neighbourhood,
+        u.full_name as guest_name, u.email as guest_email, u.phone as guest_phone,
+        v.business_name as host_name
+      FROM property_bookings pb
+      JOIN properties p ON pb.property_id = p.id
+      JOIN users u ON pb.user_id = u.id
+      LEFT JOIN vendors v ON p.host_id = v.id
+      ORDER BY pb.created_at DESC
+      LIMIT 100
+    `);
+    res.json({ bookings: result.rows });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/admin/revenue-by-vendor
+router.get("/revenue-by-vendor", async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT v.id, v.business_name, v.email,
+        COUNT(DISTINCT fo.id) as total_orders,
+        COALESCE(SUM(fo.total_amount) FILTER (WHERE fo.payment_status='paid'), 0) as food_revenue,
+        COALESCE(SUM(pb.total_amount) FILTER (WHERE pb.payment_status='paid'), 0) as property_revenue,
+        COALESCE(SUM(ep.total_amount) FILTER (WHERE ep.payment_status='paid'), 0) as events_revenue
+      FROM vendors v
+      LEFT JOIN venues vn ON vn.vendor_id = v.id
+      LEFT JOIN food_orders fo ON fo.venue_id = vn.id
+      LEFT JOIN properties p ON p.host_id = v.id
+      LEFT JOIN property_bookings pb ON pb.property_id = p.id
+      LEFT JOIN events e ON e.vendor_id = v.id
+      LEFT JOIN event_purchases ep ON ep.event_id = e.id
+      GROUP BY v.id, v.business_name, v.email
+      ORDER BY food_revenue + property_revenue + events_revenue DESC
+    `);
+    res.json({ vendors: result.rows });
+  } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
 module.exports = router;
