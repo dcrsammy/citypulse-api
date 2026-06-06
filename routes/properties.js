@@ -109,10 +109,8 @@ router.post('/:id/book', auth, async (req, res) => {
       }
       await client.query('UPDATE users SET wallet_balance = wallet_balance - $1 WHERE id=$2', [total_amount, req.user.id]);
     }
-    const qr_code = jwt.sign(
-      { property_id: req.params.id, user_id: req.user.id, check_in: check_in_date, check_out: check_out_date },
-      process.env.JWT_SECRET, { expiresIn: '365d' }
-    );
+    const bookingRef = 'CPSTAY-' + Date.now().toString(36).toUpperCase().slice(-6);
+    const qr_code = bookingRef;
     const bookingRes = await client.query(`
       INSERT INTO property_bookings (property_id, room_id, user_id, check_in_date, check_out_date, nights, guests,
         base_amount, service_fee, total_amount, payment_method, payment_status, booking_status, qr_code, special_requests, cancellation_policy)
@@ -229,9 +227,7 @@ router.post('/', auth, async (req, res) => {
     );
     // Add amenities
     if (amenities && amenities.length > 0) {
-      for (const amenity of amenities) {
-        await db.query('UPDATE properties SET amenities = $1 WHERE id = $2', [amenities, result.rows[0].id]);;
-      }
+      await db.query('UPDATE properties SET amenities = $1 WHERE id = $2', [amenities, result.rows[0].id]);
     }
     // Add room types
     if (rooms && rooms.length > 0) {
@@ -261,7 +257,35 @@ router.get('/admin/all', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-module.exports = router;
+// PATCH /api/properties/:id — update property details / images (host only)
+router.patch('/:id', auth, async (req, res) => {
+  try {
+    const ownerCheck = await db.query('SELECT id FROM properties WHERE id=$1 AND host_id=$2', [req.params.id, req.user.id]);
+    if (!ownerCheck.rows[0]) return res.status(403).json({ error: 'Not your property.' });
+
+    const allowed = ['name', 'description', 'address', 'neighbourhood', 'base_price_per_night',
+      'weekend_price', 'min_stay_nights', 'check_in_time', 'check_out_time', 'cancellation_policy',
+      'house_rules', 'cover_image', 'images', 'amenities', 'max_guests', 'bedrooms', 'bathrooms'];
+
+    const fields = [];
+    const values = [];
+    let idx = 1;
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) {
+        fields.push(`${key} = $${idx++}`);
+        values.push(req.body[key]);
+      }
+    }
+    if (fields.length === 0) return res.status(400).json({ error: 'No valid fields to update.' });
+
+    values.push(req.params.id);
+    const result = await db.query(
+      `UPDATE properties SET ${fields.join(', ')}, updated_at=NOW() WHERE id=$${idx} RETURNING *`,
+      values
+    );
+    res.json({ property: result.rows[0] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 // GET /api/properties/host/bookings — all bookings for host's properties
 router.get('/host/bookings', auth, async (req, res) => {
@@ -278,3 +302,5 @@ router.get('/host/bookings', auth, async (req, res) => {
     res.json({ bookings: result.rows });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
+
+module.exports = router;
