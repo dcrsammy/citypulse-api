@@ -197,8 +197,6 @@ router.post("/:id/reorder", auth, async (req, res) => {
   }
 });
 
-module.exports = router;
-
 router.post("/:id/cancel", auth, async (req, res) => {
   const client = await db.pool.connect();
   try {
