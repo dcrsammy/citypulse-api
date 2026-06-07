@@ -1,3 +1,15 @@
+
+// Sanitize HTML to prevent XSS
+function sanitize(str) {
+  if (!str) return str;
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+    .replace(/\/g, '&#x2F;');
+}
 const router = require("express").Router();
 const db     = require("../db");
 const auth   = require("../middleware/auth");
@@ -98,11 +110,15 @@ router.post("/item", auth, async (req, res) => {
     const { venue_id, category_id, name, description, price, prep_time_mins, dietary_tags, is_popular, image_url } = req.body;
     if (!venue_id || !name || !price)
       return res.status(400).json({ error: "venue_id, name and price are required." });
+    if (parseFloat(price) < 0)
+      return res.status(400).json({ error: "Price cannot be negative." });
+    if (parseFloat(price) > 1000000)
+      return res.status(400).json({ error: "Price cannot exceed ₦1,000,000." });
     
     const result = await db.query(
       `INSERT INTO menu_items (venue_id, category_id, name, description, price, prep_time_mins, dietary_tags, is_popular, image_url)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [venue_id, category_id || null, name, description || null, price, prep_time_mins || 15, dietary_tags || [], is_popular || false, image_url || null]
+      [venue_id, category_id || null, sanitize(name), sanitize(description) || null, price, prep_time_mins || 15, dietary_tags || [], is_popular || false, image_url || null]
     );
     res.status(201).json({ item: result.rows[0] });
   } catch (err) {

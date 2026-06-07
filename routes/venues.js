@@ -1,3 +1,15 @@
+
+// Sanitize HTML to prevent XSS
+function sanitize(str) {
+  if (!str) return str;
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+    .replace(/\/g, '&#x2F;');
+}
 const router = require("express").Router();
 const db = require("../db");
 const auth = require("../middleware/auth");
@@ -113,6 +125,32 @@ router.patch("/:id", auth, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// GET /api/venues/search-all — search venues + events + properties
+router.get("/search-all", async (req, res) => {
+  try {
+    const { q, city = 'Lagos' } = req.query;
+    if (!q) return res.json({ venues: [], events: [], properties: [] });
+
+    const [venuesRes, eventsRes, propsRes] = await Promise.all([
+      db.query(`SELECT id, name, category, neighbourhood, avg_rating, cover_image, 'venue' as type
+        FROM venues WHERE is_live=true AND (name ILIKE $1 OR category ILIKE $1 OR neighbourhood ILIKE $1) LIMIT 5`,
+        [`%${q}%`]),
+      db.query(`SELECT id, title as name, category, address as neighbourhood, cover_image, 'event' as type, event_date
+        FROM events WHERE is_live=true AND status='approved' AND (title ILIKE $1 OR category ILIKE $1 OR description ILIKE $1) LIMIT 5`,
+        [`%${q}%`]),
+      db.query(`SELECT id, name, type as category, neighbourhood, cover_image, 'property' as type, base_price_per_night
+        FROM properties WHERE is_live=true AND status='approved' AND (name ILIKE $1 OR neighbourhood ILIKE $1) LIMIT 5`,
+        [`%${q}%`])
+    ]);
+
+    res.json({
+      venues: venuesRes.rows,
+      events: eventsRes.rows,
+      properties: propsRes.rows
+    });
+  } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
 module.exports = router;

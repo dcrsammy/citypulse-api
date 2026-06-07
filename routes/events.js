@@ -1,3 +1,15 @@
+
+// Sanitize HTML to prevent XSS
+function sanitize(str) {
+  if (!str) return str;
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+    .replace(/\/g, '&#x2F;');
+}
 const router = require("express").Router();
 const db = require("../db");
 const auth = require("../middleware/auth");
@@ -153,7 +165,7 @@ router.post("/", auth, async (req, res) => {
        VALUES ($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,false,'pending',$16,$16)
        RETURNING *`,
       [organizer_id, venue_id || null, req.user.role === 'vendor' ? req.user.id : null,
-       title, description || null, category, event_date, start_time, end_time || null,
+       sanitize(title), sanitize(description) || null, category, event_date, start_time, end_time || null,
        address || null, latitude || null, longitude || null,
        cover_image || null, images || null, is_free || false,
        max_capacity || null]
