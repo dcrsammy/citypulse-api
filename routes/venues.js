@@ -1,4 +1,18 @@
+const router = require("express").Router();
+const db = require("../db");
+const auth = require("../middleware/auth");
 
+// GET /api/venues/saved/list - MUST be before /:id routes
+router.get("/saved/list", auth, async (req, res) => {
+  try {
+    const result = await db.query(
+      "SELECT v.* FROM venues v JOIN saved_venues sv ON v.id = sv.venue_id WHERE sv.user_id=$1 ORDER BY sv.created_at DESC",
+      [req.user.id]
+    );
+    res.json({ venues: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/venues - Public: List venues with search, filter, sort
@@ -101,40 +115,20 @@ router.patch("/:id", auth, async (req, res) => {
   }
 });
 
-// GET /api/venues/search-all — search venues + events + properties
+
+// GET /api/venues/search-all
 router.get("/search-all", async (req, res) => {
   try {
-    const { q, city = 'Lagos' } = req.query;
+    const { q } = req.query;
     if (!q) return res.json({ venues: [], events: [], properties: [] });
-
-    const [venuesRes, eventsRes, propsRes] = await Promise.all([
-      db.query(`SELECT id, name, category, neighbourhood, avg_rating, cover_image, 'venue' as type
-        FROM venues WHERE is_live=true AND (name ILIKE $1 OR category ILIKE $1 OR neighbourhood ILIKE $1) LIMIT 5`,
-        [`%${q}%`]),
-      db.query(`SELECT id, title as name, category, address as neighbourhood, cover_image, 'event' as type, event_date
-        FROM events WHERE is_live=true AND status='approved' AND (title ILIKE $1 OR category ILIKE $1 OR description ILIKE $1) LIMIT 5`,
-        [`%${q}%`]),
-      db.query(`SELECT id, name, type as category, neighbourhood, cover_image, 'property' as type, base_price_per_night
-        FROM properties WHERE is_live=true AND status='approved' AND (name ILIKE $1 OR neighbourhood ILIKE $1) LIMIT 5`,
-        [`%${q}%`])
+    const like = '%' + q + '%';
+    const [v, e, p] = await Promise.all([
+      db.query("SELECT id, name, category, neighbourhood, avg_rating, cover_image FROM venues WHERE is_live=true AND (name ILIKE $1 OR category ILIKE $1) LIMIT 5", [like]),
+      db.query("SELECT id, title as name, category, cover_image, event_date FROM events WHERE is_live=true AND status='approved' AND (title ILIKE $1 OR description ILIKE $1) LIMIT 5", [like]),
+      db.query("SELECT id, name, neighbourhood, cover_image, base_price_per_night FROM properties WHERE is_live=true AND status='approved' AND (name ILIKE $1 OR neighbourhood ILIKE $1) LIMIT 5", [like])
     ]);
-
-    res.json({
-      venues: venuesRes.rows,
-      events: eventsRes.rows,
-      properties: propsRes.rows
-    });
+    res.json({ venues: v.rows, events: e.rows, properties: p.rows });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
 module.exports = router;
-function sanitize(str) {
-  if (!str) return str;
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#x27;');
-}
-
