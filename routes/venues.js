@@ -60,6 +60,21 @@ router.get("/", async (req, res) => {
 });
 
 // GET /api/venues/:id
+// GET /api/venues/search-all
+router.get("/search-all", async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q) return res.json({ venues: [], events: [], properties: [] });
+    const like = '%' + q + '%';
+    const [v, e, p] = await Promise.all([
+      db.query("SELECT id, name, category, neighbourhood, avg_rating, cover_image FROM venues WHERE is_live=true AND (name ILIKE $1 OR category ILIKE $1) LIMIT 5", [like]),
+      db.query("SELECT id, title as name, category, cover_image, event_date FROM events WHERE is_live=true AND status='approved' AND (title ILIKE $1 OR description ILIKE $1) LIMIT 5", [like]),
+      db.query("SELECT id, name, neighbourhood, cover_image, base_price_per_night FROM properties WHERE is_live=true AND status='approved' AND (name ILIKE $1 OR neighbourhood ILIKE $1) LIMIT 5", [like])
+    ]);
+    res.json({ venues: v.rows, events: e.rows, properties: p.rows });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
 router.get("/:id", async (req, res) => {
   try {
     const result = await db.query("SELECT * FROM venues WHERE id=$1", [req.params.id]);
@@ -115,20 +130,5 @@ router.patch("/:id", auth, async (req, res) => {
   }
 });
 
-
-// GET /api/venues/search-all
-router.get("/search-all", async (req, res) => {
-  try {
-    const { q } = req.query;
-    if (!q) return res.json({ venues: [], events: [], properties: [] });
-    const like = '%' + q + '%';
-    const [v, e, p] = await Promise.all([
-      db.query("SELECT id, name, category, neighbourhood, avg_rating, cover_image FROM venues WHERE is_live=true AND (name ILIKE $1 OR category ILIKE $1) LIMIT 5", [like]),
-      db.query("SELECT id, title as name, category, cover_image, event_date FROM events WHERE is_live=true AND status='approved' AND (title ILIKE $1 OR description ILIKE $1) LIMIT 5", [like]),
-      db.query("SELECT id, name, neighbourhood, cover_image, base_price_per_night FROM properties WHERE is_live=true AND status='approved' AND (name ILIKE $1 OR neighbourhood ILIKE $1) LIMIT 5", [like])
-    ]);
-    res.json({ venues: v.rows, events: e.rows, properties: p.rows });
-  } catch(err) { res.status(500).json({ error: err.message }); }
-});
 
 module.exports = router;
