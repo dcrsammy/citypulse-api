@@ -21,10 +21,32 @@ router.post('/register', async (req, res) => {
     const token = jwt.sign({ id: user.id, role: 'consumer' }, process.env.JWT_SECRET, { expiresIn: '30d' });
     // Single device: store active token, invalidate previous
     const deviceInfo = req.headers['user-agent']?.slice(0,100) || 'unknown';
+    const prevToken = await db.query('SELECT active_token, email, full_name FROM users WHERE id=$1', [user.id]);
+    const hadPrevSession = prevToken.rows[0]?.active_token && prevToken.rows[0].active_token !== token;
+    
     await db.query(
       'UPDATE users SET active_token=$1, last_login_at=NOW(), last_login_device=$2 WHERE id=$3',
       [token, deviceInfo, user.id]
     );
+
+    // Send alert email if another session was active
+    if (hadPrevSession) {
+      try {
+        const { Resend } = require('resend');
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        await resend.emails.send({
+          from: 'CityPulse <security@citypulse.ng>',
+          to: user.email,
+          subject: '⚠️ New Login to Your CityPulse Account',
+          html: `<h2>New Login Detected</h2>
+            <p>Hi ${user.full_name},</p>
+            <p>Your CityPulse account was just logged into from a new device.</p>
+            <p><strong>Time:</strong> ${new Date().toLocaleString('en-NG')}</p>
+            <p>If this was you, ignore this email. If not, please contact us immediately at support@citypulse.ng</p>
+          `
+        });
+      } catch(e) { console.log('Login alert email failed:', e.message); }
+    }
     res.status(201).json({ token, user });
   } catch (err) {
     res.status(500).json({ error: err.message });
