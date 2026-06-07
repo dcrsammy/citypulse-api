@@ -438,3 +438,49 @@ router.post("/scan-stay", auth, async (req, res) => {
     res.json({ valid: true, message: "Booking verified!", booking });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
+
+// POST /api/vendor/request-payout — vendor requests payout
+router.post("/request-payout", auth, async (req, res) => {
+  try {
+    const { amount } = req.body;
+    if (!amount || amount < 1000) 
+      return res.status(400).json({ error: 'Minimum payout is ₦1,000.' });
+
+    // Check vendor has payout account
+    const vendorRes = await db.query(
+      'SELECT payout_bank, payout_account, payout_account_name, available_payout FROM vendors WHERE id=$1',
+      [req.user.id]
+    );
+    const vendor = vendorRes.rows[0];
+    if (!vendor.payout_account) 
+      return res.status(400).json({ error: 'Please set up your payout account first.' });
+    if (parseFloat(vendor.available_payout || 0) < amount)
+      return res.status(400).json({ error: `Insufficient balance. Available: ₦${vendor.available_payout}` });
+
+    // Create payout request
+    await db.query(
+      `INSERT INTO payout_requests (vendor_id, amount, bank_name, account_number, account_name, status)
+       VALUES ($1,$2,$3,$4,$5,'pending')`,
+      [req.user.id, amount, vendor.payout_bank, vendor.payout_account, vendor.payout_account_name]
+    );
+
+    // Deduct from available payout
+    await db.query(
+      'UPDATE vendors SET available_payout = available_payout - $1 WHERE id=$2',
+      [amount, req.user.id]
+    );
+
+    res.json({ message: `Payout request of ₦${Number(amount).toLocaleString()} submitted. Processing within 2-3 business days.` });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/vendor/payout-history
+router.get("/payout-history", auth, async (req, res) => {
+  try {
+    const result = await db.query(
+      'SELECT * FROM payout_requests WHERE vendor_id=$1 ORDER BY created_at DESC',
+      [req.user.id]
+    );
+    res.json({ payouts: result.rows });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
