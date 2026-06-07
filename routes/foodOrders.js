@@ -56,6 +56,17 @@ router.post("/", async (req, res) => {
       }
       await client.query('UPDATE users SET wallet_balance = wallet_balance - $1 WHERE id=$2', [parseFloat(total_amount), req.user.id]);
       await client.query("UPDATE food_orders SET payment_status='paid', order_status='confirmed' WHERE id=$1", [order.id]);
+      // Credit CPP points for wallet payment
+      if (cppEarned > 0) {
+        await client.query(
+          "UPDATE users SET cpp_points = cpp_points + $1 WHERE id=$2",
+          [cppEarned, req.user.id]
+        );
+        await client.query(
+          "INSERT INTO cpp_transactions (user_id, type, amount, description) VALUES ($1,'earn',$2,'Food order CPP')",
+          [req.user.id, cppEarned]
+        );
+      }
     }
 
 
