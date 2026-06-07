@@ -169,12 +169,96 @@ router.get("/venue/:venueId", auth, async (req, res) => {
 // PATCH /api/reservations/:id/status — vendor confirms or cancels
 router.patch("/:id/status", auth, async (req, res) => {
   try {
-    const { status } = req.body; // confirmed, cancelled, completed, no_show
+    const { status } = req.body;
+    const allowed = ['confirmed', 'seated', 'completed', 'cancelled', 'no_show'];
+    if (!allowed.includes(status)) {
+      return res.status(400).json({ error: "Invalid status" });
+    }
     const result = await db.query(
-      `UPDATE reservations SET status=$1 WHERE id=$2 RETURNING *`,
+      "UPDATE reservations SET status=$1, updated_at=NOW() WHERE id=$2 RETURNING *",
       [status, req.params.id]
     );
     res.json({ reservation: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/reservations/vendor — vendor sees all reservations across their venues
+router.get("/vendor", auth, async (req, res) => {
+  try {
+    const venuesRes = await db.query("SELECT id FROM venues WHERE vendor_id=$1", [req.user.id]);
+    const venueIds = venuesRes.rows.map(v => v.id);
+    if (venueIds.length === 0) return res.json({ reservations: [] });
+    const result = await db.query(
+      `SELECT r.*,
+        u.full_name, u.email as user_email,
+        v.name as venue_name,
+        json_agg(json_build_object(
+          'name', mi.name, 'quantity', poi.quantity, 'unit_price', poi.unit_price
+        )) FILTER (WHERE poi.id IS NOT NULL) as pre_order_items
+       FROM reservations r
+       JOIN users u ON r.user_id = u.id
+       JOIN venues v ON r.venue_id = v.id
+       LEFT JOIN pre_order_items poi ON poi.reservation_id = r.id
+       LEFT JOIN menu_items mi ON mi.id = poi.menu_item_id
+       WHERE r.venue_id = ANY($1)
+       GROUP BY r.id, u.full_name, u.email, v.name
+       ORDER BY r.reservation_date DESC, r.arrival_time DESC`,
+      [venueIds]
+    );
+    res.json({ reservations: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/reservations/scan — vendor scans guest QR code
+router.post("/scan", auth, async (req, res) => {
+  try {
+    const { qr_code } = req.body;
+    if (!qr_code) return res.status(400).json({ error: "qr_code is required." });
+
+    const result = await db.query(
+      `SELECT r.*, u.full_name, u.phone, v.name as venue_name
+       FROM reservations r
+       JOIN users u ON r.user_id = u.id
+       JOIN venues v ON r.venue_id = v.id
+       WHERE r.qr_code = $1`,
+      [qr_code]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: "Reservation not found." });
+
+    const reservation = result.rows[0];
+    const today = new Date().toISOString().split("T")[0];
+    const resDate = new Date(reservation.reservation_date).toISOString().split("T")[0];
+
+    if (resDate > today) {
+      return res.json({
+        status: "early",
+        message: `This reservation is for ${resDate}, not today.`,
+        reservation,
+      });
+    }
+
+    if (resDate < today) {
+      return res.json({
+        status: "expired",
+        message: "This reservation date has already passed.",
+        reservation,
+      });
+    }
+
+    // It's today — mark as seated if still pending/confirmed
+    if (["pending", "confirmed"].includes(reservation.status)) {
+      await db.query(
+        "UPDATE reservations SET status='seated', updated_at=NOW() WHERE id=$1",
+        [reservation.id]
+      );
+      reservation.status = "seated";
+    }
+
+    res.json({ status: "ok", message: "Guest checked in.", reservation });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -194,56 +278,3 @@ router.patch("/:id/cancel", auth, async (req, res) => {
   }
 });
 
-module.exports = router;
-// GET /api/reservations/vendor - Get all reservations for vendor's venues
-router.get("/vendor", auth, async (req, res) => {
-  try {
-    // Get vendor's venues
-    const venuesRes = await db.query(
-      "SELECT id FROM venues WHERE vendor_id=$1",
-      [req.user.id]
-    );
-    const venueIds = venuesRes.rows.map(v => v.id);
-    if (venueIds.length === 0) return res.json({ reservations: [] });
-
-    const result = await db.query(
-      `SELECT r.*, 
-        u.full_name, u.email as user_email,
-        v.name as venue_name,
-        json_agg(json_build_object(
-          'name', poi.name,
-          'quantity', poi.quantity,
-          'unit_price', poi.unit_price
-        )) FILTER (WHERE poi.id IS NOT NULL) as pre_order_items
-       FROM reservations r
-       JOIN users u ON r.user_id = u.id
-       JOIN venues v ON r.venue_id = v.id
-       LEFT JOIN pre_order_items poi ON poi.reservation_id = r.id
-       WHERE r.venue_id = ANY($1)
-       GROUP BY r.id, u.full_name, u.email, v.name
-       ORDER BY r.reservation_date DESC, r.arrival_time DESC`,
-      [venueIds]
-    );
-    res.json({ reservations: result.rows });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// PATCH /api/reservations/:id/status - Vendor updates reservation status
-router.patch("/:id/status", auth, async (req, res) => {
-  try {
-    const { status } = req.body;
-    const allowed = ['confirmed', 'seated', 'completed', 'cancelled', 'no_show'];
-    if (!allowed.includes(status)) {
-      return res.status(400).json({ error: "Invalid status" });
-    }
-    const result = await db.query(
-      "UPDATE reservations SET status=$1, updated_at=NOW() WHERE id=$2 RETURNING *",
-      [status, req.params.id]
-    );
-    res.json({ reservation: result.rows[0] });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});

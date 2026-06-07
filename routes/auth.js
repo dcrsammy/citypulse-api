@@ -41,6 +41,11 @@ router.post('/login', async (req, res) => {
     const match = await bcrypt.compare(password, user.password_hash);
     if (!match) return res.status(401).json({ error: 'Invalid credentials.' });
     const token = jwt.sign({ id: user.id, role: 'consumer' }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    const deviceInfo = req.headers['user-agent']?.slice(0, 100) || 'unknown';
+    await db.query(
+      'UPDATE users SET active_token=$1, last_login_at=NOW(), last_login_device=$2 WHERE id=$3',
+      [token, deviceInfo, user.id]
+    );
     const { password_hash: _, ...safe } = user;
     res.json({ token, user: safe });
   } catch (err) {
