@@ -1,41 +1,4 @@
 
-// Sanitize HTML to prevent XSS
-function sanitize(str) {
-  if (!str) return str;
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#x27;')
-    .replace(/\/g, '&#x2F;');
-}
-const router = require("express").Router();
-const db     = require("../db");
-const auth   = require("../middleware/auth");
-
-// GET /api/menu/:venueId — get full menu (PUBLIC for customers)
-router.get("/:venueId", async (req, res) => {
-  try {
-    const cats = await db.query(
-      `SELECT * FROM menu_categories WHERE venue_id=$1 ORDER BY sort_order ASC`,
-      [req.params.venueId]
-    );
-
-    const items = await db.query(
-      `SELECT * FROM menu_items WHERE venue_id=$1 AND is_available=true ORDER BY is_popular DESC, name ASC`,
-      [req.params.venueId]
-    );
-
-    const menu = cats.rows.map(cat => ({
-      ...cat,
-      items: items.rows.filter(i => i.category_id === cat.id),
-    }));
-
-    const uncategorised = items.rows.filter(i => !i.category_id);
-    if (uncategorised.length) {
-      menu.push({ id: null, name: 'Other', items: uncategorised });
-    }
 
     res.json({ menu, total_items: items.rowCount });
   } catch (err) {
@@ -210,3 +173,13 @@ router.post("/bulk-import", auth, async (req, res) => {
 });
 
 module.exports = router;
+function sanitize(str) {
+  if (!str) return str;
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+

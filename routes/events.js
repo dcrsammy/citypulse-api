@@ -1,46 +1,4 @@
 
-// Sanitize HTML to prevent XSS
-function sanitize(str) {
-  if (!str) return str;
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#x27;')
-    .replace(/\/g, '&#x2F;');
-}
-const router = require("express").Router();
-const db = require("../db");
-const auth = require("../middleware/auth");
-const jwt = require("jsonwebtoken");
-
-// GET /api/events — list all upcoming events
-router.get("/", async (req, res) => {
-  try {
-    const { category, date, free, limit = 20, offset = 0 } = req.query;
-    let query = `
-      SELECT e.*, 
-        COALESCE(eo.business_name, v.name) as organizer_name,
-        v.name as venue_name, v.neighbourhood, v.address, v.latitude, v.longitude,
-        json_agg(
-          json_build_object(
-            'id', t.id, 'name', t.name, 'price', t.price,
-            'early_bird_price', t.early_bird_price,
-            'early_bird_deadline', t.early_bird_deadline,
-            'available', t.quantity_total - t.quantity_sold,
-            'quantity_total', t.quantity_total
-          )
-        ) FILTER (WHERE t.id IS NOT NULL) as ticket_types
-      FROM events e
-      LEFT JOIN vendors eo ON e.organizer_id = eo.id
-      LEFT JOIN venues v ON e.venue_id = v.id
-      LEFT JOIN event_ticket_types t ON t.event_id = e.id
-      WHERE e.status = 'approved' AND e.event_date >= CURRENT_DATE`;
-
-    const params = [];
-    let i = 1;
-    if (category) { query += ` AND e.category=$${i++}`; params.push(category); }
     if (date) { query += ` AND e.event_date=$${i++}`; params.push(date); }
     if (free === "true") { query += ` AND e.is_free=true`; }
 
@@ -410,3 +368,13 @@ router.patch("/:id", auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+function sanitize(str) {
+  if (!str) return str;
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+

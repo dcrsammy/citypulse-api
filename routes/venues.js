@@ -1,30 +1,4 @@
 
-// Sanitize HTML to prevent XSS
-function sanitize(str) {
-  if (!str) return str;
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#x27;')
-    .replace(/\/g, '&#x2F;');
-}
-const router = require("express").Router();
-const db = require("../db");
-const auth = require("../middleware/auth");
-
-// GET /api/venues/saved/list - MUST be before /:id routes
-router.get("/saved/list", auth, async (req, res) => {
-  try {
-    const result = await db.query(
-      "SELECT v.* FROM venues v JOIN saved_venues sv ON v.id = sv.venue_id WHERE sv.user_id=$1 ORDER BY sv.created_at DESC",
-      [req.user.id]
-    );
-    res.json({ venues: result.rows });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
 });
 
 // GET /api/venues - Public: List venues with search, filter, sort
@@ -154,3 +128,13 @@ router.get("/search-all", async (req, res) => {
 });
 
 module.exports = router;
+function sanitize(str) {
+  if (!str) return str;
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
