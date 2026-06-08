@@ -201,6 +201,15 @@ router.post("/:id/purchase", auth, async (req, res) => {
     const available = tt.quantity_total - tt.quantity_sold;
     if (quantity > available)
       return res.status(400).json({ error: `Only ${available} tickets left.` });
+    
+    // Check event total capacity
+    const eventRes = await db.query(
+      "SELECT max_capacity, (SELECT COUNT(*) FROM event_tickets WHERE event_id=$1) as sold FROM events WHERE id=$1",
+      [req.params.id]
+    );
+    const eventData = eventRes.rows[0];
+    if (eventData?.max_capacity && parseInt(eventData.sold) + quantity > eventData.max_capacity)
+      return res.status(400).json({ error: 'Event is at full capacity.' });
 
     if (quantity > tt.max_per_person)
       return res.status(400).json({ error: `Max ${tt.max_per_person} tickets per person.` });
