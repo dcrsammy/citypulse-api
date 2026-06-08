@@ -139,6 +139,14 @@ router.post("/", auth, async (req, res) => {
       is_free, max_capacity, ticket_types
     } = req.body;
 
+    // Check KYC approval for vendors
+    if (req.user.role === 'vendor') {
+      const vendorRes = await db.query('SELECT kyc_status FROM vendors WHERE id=$1', [req.user.id]);
+      if (vendorRes.rows[0]?.kyc_status !== 'approved') {
+        return res.status(403).json({ error: 'Your KYC must be approved before creating events. Please complete verification.' });
+      }
+    }
+
     if (!title || !event_date || !start_time || !category)
       return res.status(400).json({ error: "Title, date, start time and category are required." });
 
