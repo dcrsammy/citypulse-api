@@ -214,7 +214,10 @@ router.post("/:id/purchase", auth, async (req, res) => {
     const total_amount = unit_price * quantity;
     const platform_fee = tt.price === 0 ? 0 : parseFloat((total_amount * 0.05).toFixed(2));
 
-    // Handle wallet payment
+    // Handle payment - skip for free tickets
+    if (total_amount === 0) {
+      // Free ticket - no payment needed
+    } else // Handle wallet payment
     if (payment_method === 'wallet') {
       const userRes = await client.query("SELECT wallet_balance FROM users WHERE id=$1", [req.user.id]);
       if (parseFloat(userRes.rows[0].wallet_balance) < total_amount)
