@@ -159,16 +159,64 @@ router.post('/confirm-payment', auth, async (req, res) => {
 
 // PATCH /api/properties/:id/cancel
 router.patch('/:id/cancel', auth, async (req, res) => {
+  const client = await db.pool.connect();
   try {
     const { reason } = req.body;
-    const result = await db.query(
-      `UPDATE property_bookings SET booking_status='cancelled', cancelled_at=NOW(), cancellation_reason=$1
-       WHERE id=$2 AND user_id=$3 RETURNING *`,
-      [reason||null, req.params.id, req.user.id]
+    await client.query('BEGIN');
+    
+    const bookingRes = await client.query(
+      'SELECT * FROM property_bookings WHERE id=$1 AND user_id=$2',
+      [req.params.id, req.user.id]
     );
-    if (!result.rows[0]) return res.status(404).json({ error: 'Booking not found.' });
-    res.json({ booking: result.rows[0] });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    if (!bookingRes.rows[0]) return res.status(404).json({ error: 'Booking not found.' });
+    const booking = bookingRes.rows[0];
+    
+    if (booking.booking_status === 'cancelled')
+      return res.status(400).json({ error: 'Booking already cancelled.' });
+
+    // Calculate refund based on cancellation policy
+    const daysToCheckIn = Math.ceil((new Date(booking.check_in_date) - new Date()) / (1000 * 60 * 60 * 24));
+    let refundPercent = 0;
+    const policy = booking.cancellation_policy || 'moderate';
+    
+    if (policy === 'flexible') {
+      refundPercent = daysToCheckIn >= 1 ? 100 : 0;
+    } else if (policy === 'moderate') {
+      refundPercent = daysToCheckIn >= 5 ? 100 : daysToCheckIn >= 1 ? 50 : 0;
+    } else if (policy === 'strict') {
+      refundPercent = daysToCheckIn >= 14 ? 100 : daysToCheckIn >= 7 ? 50 : 0;
+    }
+
+    const refundAmount = parseFloat(booking.total_amount) * (refundPercent / 100);
+
+    // Cancel booking
+    await client.query(
+      "UPDATE property_bookings SET booking_status='cancelled', cancelled_at=NOW(), cancellation_reason=$1 WHERE id=$2",
+      [reason||null, req.params.id]
+    );
+
+    // Process refund if applicable
+    if (refundAmount > 0 && booking.payment_status === 'paid') {
+      await client.query(
+        'UPDATE users SET wallet_balance = wallet_balance + $1 WHERE id=$2',
+        [refundAmount, req.user.id]
+      );
+      await client.query(
+        "INSERT INTO wallet_transactions (user_id,type,amount,balance_after,description,status) SELECT $1,'refund',$2,wallet_balance,'Booking cancellation refund','completed' FROM users WHERE id=$1",
+        [req.user.id, refundAmount]
+      );
+    }
+
+    await client.query('COMMIT');
+    res.json({ 
+      message: refundAmount > 0 ? `Booking cancelled. ₦${refundAmount.toLocaleString()} refunded to your wallet.` : 'Booking cancelled. No refund applicable.',
+      refund_amount: refundAmount,
+      refund_percent: refundPercent
+    });
+  } catch (err) { 
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message }); 
+  } finally { client.release(); }
 });
 
 // POST /api/properties/:id/review
