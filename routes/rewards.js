@@ -60,12 +60,7 @@ router.post("/redeem-wallet", auth, async (req, res) => {
       return res.status(400).json({ error: `Daily redemption limit is 5,000 CPP. You have redeemed ${todayTotal} CPP today.` });
 
     // Check daily redemption limit (max 5000 CPP per day)
-    const todayRedemptions = await client.query(
-      "SELECT COALESCE(SUM(ABS(amount)),0) as total FROM cpp_transactions WHERE user_id=$1 AND type='redeem' AND created_at > NOW() - INTERVAL '24 hours'",
-      [req.user.id]
-    );
-    const todayTotal = parseInt(todayRedemptions.rows[0].total || 0);
-    if (todayTotal + cpp_amount > 5000)
+        if (todayTotal + cpp_amount > 5000)
       return res.status(400).json({ error: `Daily redemption limit is 5,000 CPP. You have redeemed ${todayTotal} CPP today.` });
 
     await client.query('BEGIN');
