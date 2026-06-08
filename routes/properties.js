@@ -88,7 +88,9 @@ router.post('/:id/book', auth, async (req, res) => {
     const checkIn = new Date(check_in_date);
     const checkOut = new Date(check_out_date);
     const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
-    if (nights < 1) return res.status(400).json({ error: 'Invalid dates.' });
+    if (nights < 1) return res.status(400).json({ error: 'Check-out must be after check-in.' });
+    const today = new Date(); today.setHours(0,0,0,0);
+    if (checkIn < today) return res.status(400).json({ error: 'Check-in date cannot be in the past.' });
     const isWeekend = checkIn.getDay() === 5 || checkIn.getDay() === 6;
     const nightlyRate = isWeekend && property.weekend_price ? property.weekend_price : property.base_price_per_night;
     const base_amount = nightlyRate * nights;
