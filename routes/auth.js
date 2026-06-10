@@ -261,3 +261,24 @@ module.exports = router;
 
 
 
+
+// POST /api/waitlist
+router.post('/waitlist', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email required.' });
+    await db.query(
+      'INSERT INTO waitlist (email) VALUES ($1) ON CONFLICT (email) DO NOTHING',
+      [email.toLowerCase().trim()]
+    );
+    res.json({ message: 'Added to waitlist!' });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/waitlist/count
+router.get('/waitlist/count', async (req, res) => {
+  try {
+    const result = await db.query('SELECT COUNT(*) as count FROM waitlist');
+    res.json({ count: result.rows[0].count });
+  } catch(err) { res.status(500).json({ error: err.message }); }
+});
