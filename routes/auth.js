@@ -35,14 +35,14 @@ router.post('/register', async (req, res) => {
         const { Resend } = require('resend');
         const resend = new Resend(process.env.RESEND_API_KEY);
         await resend.emails.send({
-          from: 'CityPulse <security@citypulse.ng>',
+          from: 'CityPulse <security@city-pulse.live>',
           to: user.email,
           subject: '⚠️ New Login to Your CityPulse Account',
           html: `<h2>New Login Detected</h2>
             <p>Hi ${user.full_name},</p>
             <p>Your CityPulse account was just logged into from a new device.</p>
             <p><strong>Time:</strong> ${new Date().toLocaleString('en-NG')}</p>
-            <p>If this was you, ignore this email. If not, please contact us immediately at support@citypulse.ng</p>
+            <p>If this was you, ignore this email. If not, please contact us immediately at support@city-pulse.live</p>
           `
         });
       } catch(e) { console.log('Login alert email failed:', e.message); }
