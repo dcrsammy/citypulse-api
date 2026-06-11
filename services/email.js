@@ -62,6 +62,29 @@ const templates = {
     </div>
   `,
 
+
+  verification: (email, code) => `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#080810;">
+      <div style="background:#080810;padding:32px;text-align:center;border-bottom:1px solid #222;">
+        <h1 style="color:#FF3366;margin:0;font-size:28px;letter-spacing:-1px;">CityPulse</h1>
+        <p style="color:#666;margin:4px 0 0;font-size:12px;">Nigeria at your fingertips</p>
+      </div>
+      <div style="padding:40px 32px;">
+        <h2 style="color:#fff;font-size:22px;margin:0 0 8px;">Verify your email</h2>
+        <p style="color:#A8A5A0;font-size:14px;line-height:22px;margin:0 0 32px;">Enter this code in the app to verify <strong style="color:#fff">${email}</strong></p>
+        <div style="background:#0F0F1A;border:1px solid #FF3366;border-radius:16px;padding:32px;text-align:center;margin:0 0 32px;">
+          <p style="color:#A8A5A0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;margin:0 0 12px;">Your verification code</p>
+          <p style="color:#FF3366;font-size:48px;font-weight:800;margin:0;letter-spacing:12px;">${code}</p>
+          <p style="color:#5E5C5A;font-size:12px;margin:12px 0 0;">Expires in 10 minutes</p>
+        </div>
+        <p style="color:#5E5C5A;font-size:12px;line-height:20px;">If you did not create a CityPulse account, ignore this email.</p>
+      </div>
+      <div style="background:#0F0F1A;padding:20px;text-align:center;border-top:1px solid #222;">
+        <p style="margin:0;color:#5E5C5A;font-size:12px;">CityPulse · Nigeria · city-pulse.live</p>
+      </div>
+    </div>
+  `
+
   orderStatus: (customerName, status, orderId) => `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #FFA500;">📦 Order Update</h2>

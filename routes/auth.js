@@ -83,8 +83,8 @@ router.post('/send-verification', require('../middleware/auth'), async (req, res
     const expires = new Date(Date.now() + 10 * 60000);
     await db.query('UPDATE users SET verification_code=$1, verification_expires=$2 WHERE id=$3', [code, expires, userId]);
     const user = await db.query('SELECT email FROM users WHERE id=$1', [userId]);
-    const sendEmail = require('../services/email');
-    await sendEmail(user.rows[0].email, 'Email Verification', `Your code: ${code}`);
+    const { sendEmail, templates } = require('../services/email');
+    await sendEmail(user.rows[0].email, 'Verify your CityPulse email', templates.verification(user.rows[0].email, code));
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
