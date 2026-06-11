@@ -9,6 +9,8 @@ app.use(helmet());
 app.use(cors({
   origin: [
     'https://citypulse-vendor.netlify.app',
+    'https://city-pulse.live',
+    'https://www.city-pulse.live',
     'http://localhost:3000',
     'http://localhost:5173',
     'http://localhost:8081',
@@ -38,6 +40,7 @@ app.use("/api/vendor",        require("./routes/vendor"));
 app.use("/api/admin",         require("./routes/admin"));
 app.use("/api/menu",         require("./routes/menu"));
 app.use("/api/food-orders", require("./routes/foodOrders"));
+app.use("/api/waitlist",    require("./routes/waitlist"));
 app.use("/api/promo",       require("./routes/promo"));
 app.use("/api/reservations", require("./routes/reservations"));
 app.use("/api/services",     require("./routes/services"));
