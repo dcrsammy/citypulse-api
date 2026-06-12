@@ -1,4 +1,6 @@
 const router = require('express').Router();
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const axios = require('axios');
 
 async function sendPushNotification(toToken, title, body, data = {}) {
@@ -333,6 +335,19 @@ router.patch('/notifications/read', auth, async (req, res) => {
     await db.query(`UPDATE user_notifications SET is_read=true WHERE user_id=$1`, [req.user.id]);
     res.json({ message: 'All notifications marked as read.' });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/chat/upload-image
+router.post('/upload-image', require('../middleware/auth'), upload.single('file'), async (req, res) => {
+  try {
+    // Convert to base64 data URL for simple storage
+    const base64 = req.file.buffer.toString('base64');
+    const mimeType = req.file.mimetype;
+    const dataUrl = 'data:' + mimeType + ';base64,' + base64;
+    res.json({ url: dataUrl });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
