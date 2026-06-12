@@ -83,8 +83,7 @@ const templates = {
         <p style="margin:0;color:#5E5C5A;font-size:12px;">CityPulse · Nigeria · city-pulse.live</p>
       </div>
     </div>
-  `
-
+  `,
   orderStatus: (customerName, status, orderId) => `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #FFA500;">📦 Order Update</h2>
