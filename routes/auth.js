@@ -10,6 +10,7 @@ const auth = require('../middleware/auth');
 router.post('/pre-register', async (req, res) => {
   try {
     const { full_name, email, phone, password } = req.body;
+    if (full_name.trim().length === 0 || email.trim().length === 0 || phone.trim().length === 0 || password.trim().length === 0)
       return res.status(400).json({ error: 'All fields are required.' });
     if (password.length < 8)
       return res.status(400).json({ error: 'Password must be at least 8 characters.' });
