@@ -5,6 +5,56 @@ const db = require('../db');
 const router = express.Router();
 const auth = require('../middleware/auth');
 
+
+// POST /api/auth/pre-register - send OTP without creating account
+router.post('/pre-register', async (req, res) => {
+  try {
+    const { full_name, email, phone, password } = req.body;
+      return res.status(400).json({ error: 'All fields are required.' });
+    if (password.length < 8)
+      return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+    const exists = await db.query('SELECT id FROM users WHERE email=$1', [email.trim().toLowerCase()]);
+    if (exists.rows[0]) return res.status(409).json({ error: 'Email already registered.' });
+    const code = Math.random().toString().slice(2, 8);
+    const expires = new Date(Date.now() + 10 * 60000);
+    // Store pending registration in DB temp table
+    await db.query(`
+      INSERT INTO pending_registrations (email, full_name, phone, password, code, expires_at)
+      VALUES ($1,$2,$3,$4,$5,$6)
+      ON CONFLICT (email) DO UPDATE SET full_name=$2, phone=$3, password=$4, code=$5, expires_at=$6
+    `, [email.trim().toLowerCase(), full_name, phone, password, code, expires]);
+    const { sendEmail, templates } = require('../services/email');
+    await sendEmail(email, 'Verify your CityPulse email', templates.verification(email, code));
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/auth/verify-and-create - verify OTP then create account
+router.post('/verify-and-create', async (req, res) => {
+  try {
+    const { email, code } = req.body;
+    const result = await db.query('SELECT * FROM pending_registrations WHERE email=$1', [email.trim().toLowerCase()]);
+    const pending = result.rows[0];
+    if (!pending) return res.status(400).json({ error: "No pending registration found." });
+    if (pending.code !== code) return res.status(400).json({ error: 'Invalid code.' });
+    if (new Date() > new Date(pending.expires_at)) return res.status(400).json({ error: 'Code expired. Please register again.' });
+    const password_hash = await bcrypt.hash(pending.password, 12);
+    const userResult = await db.query(
+      'INSERT INTO users (full_name, email, phone, password_hash, email_verified) VALUES ($1,$2,$3,$4,true) RETURNING id, email, full_name, phone',
+      [pending.full_name, pending.email, pending.phone, password_hash]
+    );
+    const user = userResult.rows[0];
+    const token = jwt.sign({ id: user.id, role: 'consumer' }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    await db.query('UPDATE users SET active_token=$1, last_login_at=NOW() WHERE id=$2', [token, user.id]);
+    await db.query('DELETE FROM pending_registrations WHERE email=$1', [pending.email]);
+    res.status(201).json({ token, user: { ...user, email_verified: true } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
   try {
