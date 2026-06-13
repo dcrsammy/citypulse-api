@@ -60,6 +60,7 @@ router.post('/friends/request', auth, async (req, res) => {
        VALUES ($1, 'friend_request', 'New Friend Request', $2, $3)`,
       [addressee_id, `${req.user.full_name || 'Someone'} wants to be your friend`, JSON.stringify({ friendship_id: result.rows[0].id, requester_id: req.user.id })]
     );
+    try { const adr = await db.query("SELECT fcm_token FROM users WHERE id=$1", [addressee_id]); if (adr.rows[0] && adr.rows[0].fcm_token) await sendPushNotification(adr.rows[0].fcm_token, "New Friend Request", (req.user.full_name || "Someone") + " wants to be your friend", { type: "friend_request" }); } catch(pe) { console.log("friend push err:", pe.message); }
     res.json({ friendship: result.rows[0] });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
