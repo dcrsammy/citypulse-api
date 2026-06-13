@@ -127,6 +127,58 @@ router.post('/login', async (req, res) => {
 });
 
 // POST /api/auth/send-verification
+// POST /api/auth/forgot-password - send reset code
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email required.' });
+    const result = await db.query('SELECT id, full_name FROM users WHERE email=$1', [email.trim().toLowerCase()]);
+    const user = result.rows[0];
+    if (!user) return res.status(404).json({ error: 'No account found with that email.' });
+    const code = Math.random().toString().slice(2, 8);
+    const expires = new Date(Date.now() + 10 * 60000);
+    await db.query('UPDATE users SET verification_code=$1, verification_expires=$2 WHERE id=$3', [code, expires, user.id]);
+    const { sendEmail } = require('../services/email');
+    await sendEmail(email, 'Reset your CityPulse password', `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#080810;">
+        <div style="background:#080810;padding:32px;text-align:center;border-bottom:1px solid #222;">
+          <h1 style="color:#FF3366;margin:0;font-size:28px;">CityPulse</h1>
+        </div>
+        <div style="padding:40px 32px;">
+          <h2 style="color:#fff;font-size:22px;margin:0 0 8px;">Reset your password</h2>
+          <p style="color:#A8A5A0;font-size:14px;margin:0 0 32px;">Hi ${user.full_name}, use this code to reset your password.</p>
+          <div style="background:#0F0F1A;border:1px solid #FF3366;border-radius:16px;padding:32px;text-align:center;">
+            <p style="color:#A8A5A0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;margin:0 0 12px;">Reset code</p>
+            <p style="color:#FF3366;font-size:48px;font-weight:800;margin:0;letter-spacing:12px;">${code}</p>
+            <p style="color:#5E5C5A;font-size:12px;margin:12px 0 0;">Expires in 10 minutes</p>
+          </div>
+        </div>
+      </div>
+    `);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/auth/reset-password - verify code and set new password
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { email, code, password } = req.body;
+    if (!email || !code || !password) return res.status(400).json({ error: 'All fields required.' });
+    if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+    const result = await db.query('SELECT * FROM users WHERE email=$1', [email.trim().toLowerCase()]);
+    const user = result.rows[0];
+    if (!user) return res.status(404).json({ error: 'User not found.' });
+    if (user.verification_code !== code) return res.status(400).json({ error: 'Invalid code.' });
+    if (new Date() > new Date(user.verification_expires)) return res.status(400).json({ error: 'Code expired.' });
+    const password_hash = await bcrypt.hash(password, 12);
+    await db.query('UPDATE users SET password_hash=$1, verification_code=NULL, verification_expires=NULL WHERE id=$2', [password_hash, user.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 router.post('/send-verification', require('../middleware/auth'), async (req, res) => {
   try {
     const userId = req.user.id;
