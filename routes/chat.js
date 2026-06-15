@@ -343,11 +343,11 @@ router.patch('/notifications/read', auth, async (req, res) => {
 // POST /api/chat/upload-image
 router.post('/upload-image', require('../middleware/auth'), upload.single('file'), async (req, res) => {
   try {
-    // Convert to base64 data URL for simple storage
-    const base64 = req.file.buffer.toString('base64');
-    const mimeType = req.file.mimetype;
-    const dataUrl = 'data:' + mimeType + ';base64,' + base64;
-    res.json({ url: dataUrl });
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    const b64 = Buffer.from(req.file.buffer).toString("base64");
+    const dataURI = "data:" + req.file.mimetype + ";base64," + b64;
+    const result = await cloudinary.uploader.upload(dataURI, { folder: "citypulse/chat", resource_type: "image" });
+    res.json({ url: result.secure_url });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
