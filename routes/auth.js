@@ -5,7 +5,6 @@ const db = require('../db');
 const router = express.Router();
 const auth = require('../middleware/auth');
 
-
 // POST /api/auth/pre-register - send OTP without creating account
 router.post('/pre-register', async (req, res) => {
   try {
@@ -18,7 +17,6 @@ router.post('/pre-register', async (req, res) => {
     if (exists.rows[0]) return res.status(409).json({ error: 'Email already registered.' });
     const code = Math.random().toString().slice(2, 8);
     const expires = new Date(Date.now() + 10 * 60000);
-    // Store pending registration in DB temp table
     await db.query(`
       INSERT INTO pending_registrations (email, full_name, phone, password, code, expires_at)
       VALUES ($1,$2,$3,$4,$5,$6)
@@ -38,7 +36,7 @@ router.post('/verify-and-create', async (req, res) => {
     const { email, code } = req.body;
     const result = await db.query('SELECT * FROM pending_registrations WHERE email=$1', [email.trim().toLowerCase()]);
     const pending = result.rows[0];
-    if (!pending) return res.status(400).json({ error: "No pending registration found." });
+    if (!pending) return res.status(400).json({ error: 'No pending registration found.' });
     if (pending.code !== code) return res.status(400).json({ error: 'Invalid code.' });
     if (new Date() > new Date(pending.expires_at)) return res.status(400).json({ error: 'Code expired. Please register again.' });
     const password_hash = await bcrypt.hash(pending.password, 12);
@@ -70,34 +68,11 @@ router.post('/register', async (req, res) => {
     );
     const user = result.rows[0];
     const token = jwt.sign({ id: user.id, role: 'consumer' }, process.env.JWT_SECRET, { expiresIn: '30d' });
-    // Single device: store active token, invalidate previous
     const deviceInfo = req.headers['user-agent']?.slice(0,100) || 'unknown';
-    const prevToken = await db.query('SELECT active_token, email, full_name FROM users WHERE id=$1', [user.id]);
-    const hadPrevSession = prevToken.rows[0]?.active_token && prevToken.rows[0].active_token !== token;
-    
     await db.query(
       'UPDATE users SET active_token=$1, last_login_at=NOW(), last_login_device=$2 WHERE id=$3',
       [token, deviceInfo, user.id]
     );
-
-    // Send alert email if another session was active
-    if (hadPrevSession) {
-      try {
-        const { Resend } = require('resend');
-        const resend = new Resend(process.env.RESEND_API_KEY);
-        await resend.emails.send({
-          from: 'CityPulse <security@city-pulse.live>',
-          to: user.email,
-          subject: '⚠️ New Login to Your CityPulse Account',
-          html: `<h2>New Login Detected</h2>
-            <p>Hi ${user.full_name},</p>
-            <p>Your CityPulse account was just logged into from a new device.</p>
-            <p><strong>Time:</strong> ${new Date().toLocaleString('en-NG')}</p>
-            <p>If this was you, ignore this email. If not, please contact us immediately at support@city-pulse.live</p>
-          `
-        });
-      } catch(e) { console.log('Login alert email failed:', e.message); }
-    }
     res.status(201).json({ token, user });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -126,8 +101,30 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// POST /api/auth/send-verification
-// POST /api/auth/forgot-password - send reset code
+// POST /api/auth/google - Google Sign In
+router.post('/google', async (req, res) => {
+  try {
+    const { email, name, picture } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email required.' });
+    let result = await db.query('SELECT * FROM users WHERE email=$1', [email.toLowerCase()]);
+    let user = result.rows[0];
+    if (!user) {
+      const newUser = await db.query(
+        'INSERT INTO users (full_name, email, password_hash, email_verified, avatar_url) VALUES ($1,$2,$3,true,$4) RETURNING *',
+        [name, email.toLowerCase(), 'GOOGLE_AUTH_' + Date.now(), picture || null]
+      );
+      user = newUser.rows[0];
+    }
+    const token = jwt.sign({ id: user.id, role: 'consumer' }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    await db.query('UPDATE users SET active_token=$1, last_login_at=NOW() WHERE id=$2', [token, user.id]);
+    const { password_hash: _, ...safe } = user;
+    res.json({ token, user: { ...safe, email_verified: true } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/auth/forgot-password
 router.post('/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
@@ -145,10 +142,9 @@ router.post('/forgot-password', async (req, res) => {
           <h1 style="color:#FF3366;margin:0;font-size:28px;">CityPulse</h1>
         </div>
         <div style="padding:40px 32px;">
-          <h2 style="color:#fff;font-size:22px;margin:0 0 8px;">Reset your password</h2>
-          <p style="color:#A8A5A0;font-size:14px;margin:0 0 32px;">Hi ${user.full_name}, use this code to reset your password.</p>
+          <h2 style="color:#fff;">Reset your password</h2>
+          <p style="color:#A8A5A0;">Hi ${user.full_name}, use this code to reset your password.</p>
           <div style="background:#0F0F1A;border:1px solid #FF3366;border-radius:16px;padding:32px;text-align:center;">
-            <p style="color:#A8A5A0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:2px;margin:0 0 12px;">Reset code</p>
             <p style="color:#FF3366;font-size:48px;font-weight:800;margin:0;letter-spacing:12px;">${code}</p>
             <p style="color:#5E5C5A;font-size:12px;margin:12px 0 0;">Expires in 10 minutes</p>
           </div>
@@ -161,7 +157,7 @@ router.post('/forgot-password', async (req, res) => {
   }
 });
 
-// POST /api/auth/reset-password - verify code and set new password
+// POST /api/auth/reset-password
 router.post('/reset-password', async (req, res) => {
   try {
     const { email, code, password } = req.body;
@@ -179,6 +175,8 @@ router.post('/reset-password', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// POST /api/auth/send-verification
 router.post('/send-verification', require('../middleware/auth'), async (req, res) => {
   try {
     const userId = req.user.id;
@@ -222,30 +220,15 @@ router.post('/vendor/register', async (req, res) => {
       return res.status(400).json({ error: 'Business name, email and password are required.' });
     const exists = await db.query('SELECT id FROM vendors WHERE email=$1', [email.trim().toLowerCase()]);
     if (exists.rows[0]) return res.status(409).json({ error: 'Email already registered.' });
-
-    // Try to geocode the address
-    let latitude = null;
-    let longitude = null;
-    let address_verified = false;
-    let kyc_status = 'pending';
-
+    let latitude = null, longitude = null, address_verified = false, kyc_status = 'pending';
     if (business_address) {
       try {
         const geoQuery = encodeURIComponent(business_address + ', Lagos, Nigeria');
-        const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${geoQuery}&format=json&limit=1`, {
-          headers: { 'User-Agent': 'CityPulse/1.0' }
-        });
+        const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${geoQuery}&format=json&limit=1`, { headers: { 'User-Agent': 'CityPulse/1.0' } });
         const geoData = await geoRes.json();
-        if (geoData && geoData[0]) {
-          latitude = parseFloat(geoData[0].lat);
-          longitude = parseFloat(geoData[0].lon);
-          address_verified = true;
-        }
-      } catch (geoErr) {
-        console.error('Geocoding error:', geoErr.message);
-      }
+        if (geoData && geoData[0]) { latitude = parseFloat(geoData[0].lat); longitude = parseFloat(geoData[0].lon); address_verified = true; }
+      } catch (geoErr) { console.error('Geocoding error:', geoErr.message); }
     }
-
     const password_hash = await bcrypt.hash(password, 12);
     const result = await db.query(
       `INSERT INTO vendors (business_name, email, phone, password_hash, is_verified, business_types, is_property_host, is_event_organizer)
@@ -253,7 +236,6 @@ router.post('/vendor/register', async (req, res) => {
       [business_name.trim(), email.trim().toLowerCase(), phone || null, password_hash, business_types, business_types.includes('property'), business_types.includes('events')]
     );
     const vendor = result.rows[0];
-    // Insert KYC data into vendor_kyc table
     await db.query(
       `INSERT INTO vendor_kyc (vendor_id, cac_number, owner_full_name, owner_bvn, business_address, kyc_status, kyc_submitted_at, latitude, longitude, address_verified)
        VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7,$8,$9)`,
@@ -261,14 +243,7 @@ router.post('/vendor/register', async (req, res) => {
     );
     const token = jwt.sign({ id: vendor.id, role: 'vendor' }, process.env.JWT_SECRET, { expiresIn: '30d' });
     const { password_hash: _, ...safe } = vendor;
-    res.status(201).json({ 
-      token, 
-      vendor: safe,
-      address_verified,
-      message: address_verified 
-        ? 'Registration successful! Your address was verified.' 
-        : 'Registration successful! Your address could not be verified automatically and will be reviewed by our team.'
-    });
+    res.status(201).json({ token, vendor: safe, address_verified });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -291,7 +266,7 @@ router.post('/vendor/login', async (req, res) => {
   }
 });
 
-// PATCH /api/auth/profile — combined update
+// PATCH /api/auth/profile
 router.patch('/profile', auth, async (req, res) => {
   try {
     const { full_name, phone, username, bio } = req.body;
@@ -300,13 +275,7 @@ router.patch('/profile', auth, async (req, res) => {
       if (existing.rows[0]) return res.status(400).json({ error: 'Username already taken.' });
     }
     const result = await db.query(
-      `UPDATE users SET
-        full_name = COALESCE($1, full_name),
-        phone = COALESCE($2, phone),
-        username = COALESCE($3, username),
-        bio = COALESCE($4, bio),
-        updated_at = NOW()
-       WHERE id=$5
+      `UPDATE users SET full_name=COALESCE($1,full_name), phone=COALESCE($2,phone), username=COALESCE($3,username), bio=COALESCE($4,bio), updated_at=NOW() WHERE id=$5
        RETURNING id, full_name, email, phone, username, bio, citypulse_id, avatar_url, wallet_balance, cpp_points, cpp_tier, neighbourhood, city`,
       [full_name || null, phone || null, username || null, bio || null, req.user.id]
     );
@@ -328,10 +297,7 @@ router.get('/me', require('../middleware/auth'), async (req, res) => {
 // GET /api/auth/addresses
 router.get('/addresses', auth, async (req, res) => {
   try {
-    const result = await db.query(
-      'SELECT * FROM user_addresses WHERE user_id=$1 ORDER BY is_default DESC, created_at DESC',
-      [req.user.id]
-    );
+    const result = await db.query('SELECT * FROM user_addresses WHERE user_id=$1 ORDER BY is_default DESC, created_at DESC', [req.user.id]);
     res.json({ addresses: result.rows });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -361,58 +327,3 @@ router.delete('/addresses/:id', auth, async (req, res) => {
 });
 
 module.exports = router;
-
-
-
-
-// POST /api/waitlist
-router.post('/waitlist', async (req, res) => {
-  try {
-    const { email } = req.body;
-    if (!email) return res.status(400).json({ error: 'Email required.' });
-    await db.query(
-      'INSERT INTO waitlist (email) VALUES ($1) ON CONFLICT (email) DO NOTHING',
-      [email.toLowerCase().trim()]
-    );
-    res.json({ message: 'Added to waitlist!' });
-  } catch(err) { res.status(500).json({ error: err.message }); }
-});
-
-// GET /api/waitlist/count
-router.get('/waitlist/count', async (req, res) => {
-  try {
-    const result = await db.query('SELECT COUNT(*) as count FROM waitlist');
-    res.json({ count: result.rows[0].count });
-  } catch(err) { res.status(500).json({ error: err.message }); }
-});
-// POST /api/auth/google - Google Sign In
-router.post('/google', async (req, res) => {
-  try {
-    const { idToken } = req.body;
-    if (!idToken) return res.status(400).json({ error: 'ID token required.' });
-    const { OAuth2Client } = require('google-auth-library');
-    const client = new OAuth2Client('1015273845520-4fv4c82onq329cokcmkva4i4q4telhbn.apps.googleusercontent.com');
-    const ticket = await client.verifyIdToken({
-      idToken,
-      audience: '1015273845520-4fv4c82onq329cokcmkva4i4q4telhbn.apps.googleusercontent.com',
-    });
-    const payload = ticket.getPayload();
-    const { email, name, picture, sub: googleId } = payload;
-    // Find or create user
-    let result = await db.query('SELECT * FROM users WHERE email=$1', [email.toLowerCase()]);
-    let user = result.rows[0];
-    if (!user) {
-      const newUser = await db.query(
-        'INSERT INTO users (full_name, email, password_hash, email_verified, avatar_url) VALUES ($1,$2,$3,true,$4) RETURNING *',
-        [name, email.toLowerCase(), 'GOOGLE_AUTH_' + googleId, picture || null]
-      );
-      user = newUser.rows[0];
-    }
-    const token = jwt.sign({ id: user.id, role: 'consumer' }, process.env.JWT_SECRET, { expiresIn: '30d' });
-    await db.query('UPDATE users SET active_token=$1, last_login_at=NOW() WHERE id=$2', [token, user.id]);
-    const { password_hash: _, ...safe } = user;
-    res.json({ token, user: { ...safe, email_verified: true } });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
