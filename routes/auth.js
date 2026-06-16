@@ -385,3 +385,34 @@ router.get('/waitlist/count', async (req, res) => {
     res.json({ count: result.rows[0].count });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
+// POST /api/auth/google - Google Sign In
+router.post('/google', async (req, res) => {
+  try {
+    const { idToken } = req.body;
+    if (!idToken) return res.status(400).json({ error: 'ID token required.' });
+    const { OAuth2Client } = require('google-auth-library');
+    const client = new OAuth2Client('1015273845520-4fv4c82onq329cokcmkva4i4q4telhbn.apps.googleusercontent.com');
+    const ticket = await client.verifyIdToken({
+      idToken,
+      audience: '1015273845520-4fv4c82onq329cokcmkva4i4q4telhbn.apps.googleusercontent.com',
+    });
+    const payload = ticket.getPayload();
+    const { email, name, picture, sub: googleId } = payload;
+    // Find or create user
+    let result = await db.query('SELECT * FROM users WHERE email=$1', [email.toLowerCase()]);
+    let user = result.rows[0];
+    if (!user) {
+      const newUser = await db.query(
+        'INSERT INTO users (full_name, email, password_hash, email_verified, avatar_url) VALUES ($1,$2,$3,true,$4) RETURNING *',
+        [name, email.toLowerCase(), 'GOOGLE_AUTH_' + googleId, picture || null]
+      );
+      user = newUser.rows[0];
+    }
+    const token = jwt.sign({ id: user.id, role: 'consumer' }, process.env.JWT_SECRET, { expiresIn: '30d' });
+    await db.query('UPDATE users SET active_token=$1, last_login_at=NOW() WHERE id=$2', [token, user.id]);
+    const { password_hash: _, ...safe } = user;
+    res.json({ token, user: { ...safe, email_verified: true } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
