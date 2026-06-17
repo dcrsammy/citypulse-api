@@ -326,4 +326,25 @@ router.delete('/addresses/:id', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+
+// POST /api/auth/google - Google Sign In
+router.post("/google", async (req, res) => {
+  try {
+    const { email, name, picture } = req.body;
+    if (!email) return res.status(400).json({ error: "Email required." });
+    let result = await db.query("SELECT * FROM users WHERE email=$1", [email.toLowerCase()]);
+    let user = result.rows[0];
+    if (!user) {
+      const newUser = await db.query("INSERT INTO users (full_name, email, password_hash, email_verified, avatar_url) VALUES ($1,$2,$3,true,$4) RETURNING *", [name, email.toLowerCase(), "GOOGLE_AUTH_" + Date.now(), picture || null]);
+      user = newUser.rows[0];
+    }
+    const token = jwt.sign({ id: user.id, role: "consumer" }, process.env.JWT_SECRET, { expiresIn: "30d" });
+    await db.query("UPDATE users SET active_token=$1, last_login_at=NOW() WHERE id=$2", [token, user.id]);
+    const { password_hash: _, ...safe } = user;
+    res.json({ token, user: { ...safe, email_verified: true } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
