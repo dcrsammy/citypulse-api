@@ -241,14 +241,36 @@ router.get('/conversations', auth, async (req, res) => {
     const chatIds = [];
     snapshot.forEach(child => chatIds.push({ chat_id: child.key, updated_at: child.val() }));
     chatIds.sort((a, b) => b.updated_at - a.updated_at);
-
     const conversations = [];
     for (const { chat_id } of chatIds.slice(0, 20)) {
       const metaSnap = await firebase.ref(`chats/${chat_id}/metadata`).once('value');
       const meta = metaSnap.val();
-      if (meta) conversations.push({ chat_id, ...meta });
+      if (!meta) continue;
+      const item = { chat_id, ...meta };
+      if (meta.is_system_chat) {
+        const otherUserId = Object.keys(meta.participants || {}).find(id => id !== req.user.id);
+        if (otherUserId) {
+          const vRes = await db.query('SELECT business_name, owner_full_name FROM vendors WHERE id=$1', [otherUserId]);
+          if (vRes.rows[0]) {
+            item.display_name = vRes.rows[0].business_name;
+            item.is_vendor = true;
+          }
+        }
+      } else {
+        const otherUserId = Object.keys(meta.participants || {}).find(id => id !== req.user.id);
+        if (otherUserId) {
+          const uRes = await db.query('SELECT full_name, avatar_url, username, citypulse_id FROM users WHERE id=$1', [otherUserId]);
+          if (uRes.rows[0]) {
+            item.display_name = uRes.rows[0].full_name;
+            item.avatar_url = uRes.rows[0].avatar_url;
+            item.username = uRes.rows[0].username;
+            item.citypulse_id = uRes.rows[0].citypulse_id;
+            item.friend_id = otherUserId;
+          }
+        }
+      }
+      conversations.push(item);
     }
-
     res.json({ conversations });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

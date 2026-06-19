@@ -1,5 +1,7 @@
 const { notifyOrderStatus } = require("../services/notifications");
 const { notifyNewOrder } = require("../services/notifications");
+const { createSystemChat } = require("../services/systemChat");
+const dbPg = require("../db");
 const router = require("express").Router();
 const db     = require("../db");
 const auth   = require("../middleware/auth");
@@ -101,6 +103,22 @@ router.post("/", async (req, res) => {
         console.error('Email notification failed:', err.message)
       );
     }
+
+    // Create system chat thread between customer and vendor
+    try {
+      const vendorRes = await dbPg.query("SELECT vendor_id, name FROM venues WHERE id=$1", [venue_id]);
+      const vinfo = vendorRes.rows[0];
+      if (vinfo) {
+        createSystemChat({
+          customerId: req.user.id,
+          vendorUserId: vinfo.vendor_id,
+          contextType: "order",
+          contextId: order.id,
+          contextLabel: "Order #" + order.id.slice(-6).toUpperCase(),
+          systemMessage: "🍽️ Order placed at " + vinfo.name + " — ₦" + Number(total_amount).toLocaleString(),
+        }).catch(e => console.error("System chat error:", e.message));
+      }
+    } catch (sce) { console.error("System chat setup error:", sce.message); }
 
     res.status(201).json({ order, message: "Order placed successfully." });
   } catch (err) {
