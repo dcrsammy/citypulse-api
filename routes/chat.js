@@ -321,6 +321,30 @@ router.get('/contextual/:firebase_chat_id', auth, async (req, res) => {
 });
 
 // POST /api/chat/contextual/:firebase_chat_id/send
+router.post('/system/:chat_id/send', auth, async (req, res) => {
+  try {
+    const { text, type = 'text' } = req.body;
+    const metaSnap = await firebase.ref(`chats/${req.params.chat_id}/metadata`).once('value');
+    const meta = metaSnap.val();
+    if (!meta || !meta.participants || !meta.participants[req.user.id]) {
+      return res.status(403).json({ error: 'Not a participant in this chat.' });
+    }
+    const message = {
+      text, type,
+      sender_id: req.user.id,
+      timestamp: Date.now(),
+      is_saved: false,
+      is_read: false,
+    };
+    const msgRef = await firebase.ref(`chats/${req.params.chat_id}/messages`).push(message);
+    await firebase.ref(`chats/${req.params.chat_id}/metadata`).update({
+      last_message: text,
+      last_sender: req.user.id,
+      updated_at: Date.now(),
+    });
+    res.json({ message_id: msgRef.key });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 router.post('/contextual/:firebase_chat_id/send', auth, async (req, res) => {
   try {
     const { text, type = 'text' } = req.body;
