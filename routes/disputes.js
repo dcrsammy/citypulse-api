@@ -27,7 +27,6 @@ router.get('/my', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-module.exports = router;
 // POST /api/disputes/:id/refund — admin triggers refund
 router.post('/:id/refund', async (req, res) => {
   try {
@@ -55,3 +54,5 @@ router.post('/:id/refund', async (req, res) => {
     }
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
+
+module.exports = router;

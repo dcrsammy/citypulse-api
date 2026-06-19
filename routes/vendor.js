@@ -418,7 +418,6 @@ router.patch("/property-bookings/:id/cancel", auth, async (req, res) => {
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
 
-module.exports = router;
 
 // POST /api/vendor/scan-stay — verify property booking
 router.post("/scan-stay", auth, async (req, res) => {
@@ -484,3 +483,5 @@ router.get("/payout-history", auth, async (req, res) => {
     res.json({ payouts: result.rows });
   } catch(err) { res.status(500).json({ error: err.message }); }
 });
+
+module.exports = router;
