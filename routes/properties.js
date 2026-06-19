@@ -47,6 +47,21 @@ router.get('/my/bookings', auth, async (req, res) => {
 });
 
 // GET /api/properties/:id — single property
+router.get('/my', auth, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT p.*, COUNT(pb.id) as total_bookings, 
+        COALESCE(SUM(pb.total_amount) FILTER (WHERE pb.payment_status='paid'), 0) as total_revenue
+       FROM properties p
+       LEFT JOIN property_bookings pb ON pb.property_id = p.id
+       WHERE p.host_id = $1
+       GROUP BY p.id ORDER BY p.created_at DESC`,
+      [req.user.id]
+    );
+    res.json({ properties: result.rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 router.get('/:id', async (req, res) => {
   try {
     const result = await db.query(`
@@ -240,20 +255,6 @@ router.post('/:id/review', auth, async (req, res) => {
 });
 
 // GET /api/properties/my — vendor's own properties
-router.get('/my', auth, async (req, res) => {
-  try {
-    const result = await db.query(
-      `SELECT p.*, COUNT(pb.id) as total_bookings, 
-        COALESCE(SUM(pb.total_amount) FILTER (WHERE pb.payment_status='paid'), 0) as total_revenue
-       FROM properties p
-       LEFT JOIN property_bookings pb ON pb.property_id = p.id
-       WHERE p.host_id = $1
-       GROUP BY p.id ORDER BY p.created_at DESC`,
-      [req.user.id]
-    );
-    res.json({ properties: result.rows });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
 
 // POST /api/properties — create property (hosts only)
 router.post('/', auth, async (req, res) => {
