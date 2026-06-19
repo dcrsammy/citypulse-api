@@ -9,6 +9,7 @@ app.use(helmet());
 app.use(cors({
   origin: [
     'https://citypulse-vendor.netlify.app',
+    'https://vendor.city-pulse.live',
     'https://city-pulse.live',
     'https://www.city-pulse.live',
     'http://localhost:3000',
