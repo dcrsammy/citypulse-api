@@ -33,11 +33,11 @@ router.get('/users/search', auth, async (req, res) => {
     const result = await db.query(
       `SELECT id, full_name, username, citypulse_id, avatar_url, neighbourhood
        FROM users
-       WHERE (username ILIKE $1 OR citypulse_id ILIKE $1 OR full_name ILIKE $1)
+       WHERE (username ILIKE $1 OR citypulse_id ILIKE $1)
        AND id != $2
        AND is_active = true
        LIMIT 10`,
-      [`%${q}%`, req.user.id]
+      [q, req.user.id]
     );
     res.json({ users: result.rows });
   } catch (err) { res.status(500).json({ error: err.message }); }
