@@ -128,7 +128,6 @@ router.post("/confirm-order/:orderId", auth, async (req, res) => {
   }
 });
 
-module.exports = router;
 // POST /api/payments/topup — initialize wallet top-up
 router.post('/topup', auth, async (req, res) => {
   try {
@@ -250,3 +249,5 @@ router.post('/withdraw', auth, async (req, res) => {
     res.status(500).json({ error: err.response?.data?.message || err.message });
   }
 });
+
+module.exports = router;
