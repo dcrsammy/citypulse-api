@@ -278,6 +278,19 @@ router.post("/:id/purchase", auth, async (req, res) => {
     if (cpp > 0) await client.query("UPDATE users SET cpp_points = cpp_points + $1 WHERE id=$2", [cpp, req.user.id]);
 
     await client.query("COMMIT");
+    // Send confirmation email and push
+    try {
+      const userRes = await db.query('SELECT full_name, email, fcm_token FROM users WHERE id=$1', [req.user.id]);
+      const user = userRes.rows[0];
+      const ttName = tt.name || 'General';
+      const eventTitle = (await db.query('SELECT title, event_date FROM events WHERE id=$1', [req.params.id])).rows[0];
+      if (user?.email) {
+        await sendEmail(user.email, 'Your CityPulse Ticket is Confirmed!', templates.ticketConfirmation(user.full_name, eventTitle.title, eventTitle.event_date, ttName, quantity, total_amount, tickets));
+      }
+      if (user?.fcm_token) {
+        await sendPushNotification(user.fcm_token, 'Ticket Confirmed!', 'Your ticket for ' + eventTitle.title + ' is ready. See you there!', { type: 'ticket', purchase_id: purchase.id });
+      }
+    } catch(ne) { console.log('Ticket notification error:', ne.message); }
     res.status(201).json({ purchase, tickets, cpp_earned: cpp, message: `${quantity} ticket(s) confirmed!` });
   } catch (err) {
     await client.query("ROLLBACK");
@@ -377,6 +390,19 @@ router.post("/confirm-payment", auth, async (req, res) => {
     const cpp = Math.floor(total_amount / 1000) * 10;
     if (cpp > 0) await client.query("UPDATE users SET cpp_points = cpp_points + $1 WHERE id=$2", [cpp, req.user.id]);
     await client.query("COMMIT");
+    // Send confirmation email and push
+    try {
+      const userRes = await db.query('SELECT full_name, email, fcm_token FROM users WHERE id=$1', [req.user.id]);
+      const user = userRes.rows[0];
+      const ttRes2 = await db.query('SELECT name FROM event_ticket_types WHERE id=$1', [ticket_type_id]);
+      const eventRes2 = await db.query('SELECT title, event_date FROM events WHERE id=$1', [event_id]);
+      if (user?.email) {
+        await sendEmail(user.email, 'Your CityPulse Ticket is Confirmed!', templates.ticketConfirmation(user.full_name, eventRes2.rows[0].title, eventRes2.rows[0].event_date, ttRes2.rows[0]?.name || 'General', quantity, total_amount, tickets));
+      }
+      if (user?.fcm_token) {
+        await sendPushNotification(user.fcm_token, 'Ticket Confirmed!', 'Your ticket for ' + eventRes2.rows[0].title + ' is ready!', { type: 'ticket', purchase_id: purchase.id });
+      }
+    } catch(ne) { console.log('Ticket notification error:', ne.message); }
     res.json({ tickets, cpp_earned: cpp });
   } catch (err) {
     await client.query("ROLLBACK");
@@ -386,7 +412,6 @@ router.post("/confirm-payment", auth, async (req, res) => {
   }
 });
 
-module.exports = router;
 
 // PATCH /api/events/:id — update event (vendor/organizer)
 router.patch("/:id", auth, async (req, res) => {
@@ -418,3 +443,5 @@ router.patch("/:id", auth, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+module.exports = router;

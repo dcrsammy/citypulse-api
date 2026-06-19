@@ -123,6 +123,33 @@ templates.reservationConfirmation = (customerName, venueName, date, time, partyS
     </div>
   `;
 
+
+templates.ticketConfirmation = (customerName, eventTitle, eventDate, ticketType, quantity, totalAmount, tickets) => {
+  const qrList = tickets.map((t, i) => 
+    '<div style="background:#f9f9f9;border:1px solid #ddd;border-radius:8px;padding:16px;margin:8px 0;text-align:center;">' +
+    '<p style="margin:0;font-size:12px;color:#666;">Ticket ' + (i+1) + ' of ' + quantity + '</p>' +
+    '<p style="margin:4px 0;font-size:11px;word-break:break-all;color:#333;">' + t.id + '</p>' +
+    '</div>'
+  ).join('');
+  return `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#080810;color:#fff;padding:32px;border-radius:16px;">
+      <h1 style="color:#FF3366;text-align:center;margin-bottom:4px;">CityPulse</h1>
+      <h2 style="text-align:center;color:#fff;margin-bottom:24px;">🎟️ Ticket Confirmed!</h2>
+      <p>Hi ${customerName},</p>
+      <p>Your ticket for <strong>${eventTitle}</strong> has been confirmed.</p>
+      <div style="background:#0F0F1A;border:1px solid #FF3366;border-radius:12px;padding:24px;margin:24px 0;">
+        <p><strong>Event:</strong> ${eventTitle}</p>
+        <p><strong>Date:</strong> ${new Date(eventDate).toLocaleDateString('en-NG', {weekday:'long',year:'numeric',month:'long',day:'numeric'})}</p>
+        <p><strong>Ticket Type:</strong> ${ticketType}</p>
+        <p><strong>Quantity:</strong> ${quantity}</p>
+        <p><strong>Amount Paid:</strong> ₦${Number(totalAmount).toLocaleString()}</p>
+      </div>
+      <p style="color:#A8A5A0;font-size:13px;">Your QR codes are available in the CityPulse app under <strong>My Tickets</strong>. Show them at the entrance for entry.</p>
+      <p style="color:#5E5C5A;font-size:12px;text-align:center;margin-top:32px;">CityPulse — Your city, one app.</p>
+    </div>
+  `;
+};
+
 module.exports = {
   sendEmail,
   templates
