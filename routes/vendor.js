@@ -86,7 +86,8 @@ router.get("/orders", auth, async (req, res) => {
       `SELECT 
         fo.id, fo.user_id, fo.venue_id, fo.total_amount, fo.order_status, 
         fo.order_type, fo.special_requests, fo.delivery_address, fo.created_at,
-        u.full_name,
+        fo.verification_pin, fo.payment_method,
+        u.full_name, u.phone,
         json_agg(json_build_object(
           'name', foi.name, 
           'quantity', foi.quantity,
@@ -98,7 +99,7 @@ router.get("/orders", auth, async (req, res) => {
        LEFT JOIN users u ON fo.user_id = u.id
        LEFT JOIN food_order_items foi ON fo.id = foi.order_id
        WHERE fo.venue_id = ANY($1)
-       GROUP BY fo.id, u.full_name
+       GROUP BY fo.id, u.full_name, u.phone
        ORDER BY fo.created_at DESC`,
       [venueIds]
     );
