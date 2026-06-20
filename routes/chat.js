@@ -239,9 +239,7 @@ router.get('/conversations', auth, async (req, res) => {
   try {
     const snapshot = await firebase.ref(`users/${req.user.id}/chats`).once('value');
     const chatIds = [];
-    snapshot.forEach(child => chatIds.push({ chat_id: child.key, updated_at: child.val() }));
-    console.log('DEBUG req.user.id:', req.user.id);
-    console.log('DEBUG chatIds:', JSON.stringify(chatIds));
+    snapshot.forEach(child => { chatIds.push({ chat_id: child.key, updated_at: child.val() }); });
     chatIds.sort((a, b) => b.updated_at - a.updated_at);
     const conversations = [];
     for (const { chat_id } of chatIds.slice(0, 20)) {
@@ -317,7 +315,7 @@ router.get('/contextual/:firebase_chat_id', auth, async (req, res) => {
     const snapshot = await firebase.ref(`contextual/${req.params.firebase_chat_id}/messages`)
       .orderByChild('timestamp').limitToLast(100).once('value');
     const messages = [];
-    snapshot.forEach(child => messages.push({ id: child.key, ...child.val() }));
+    snapshot.forEach(child => { messages.push({ id: child.key, ...child.val() }); });
     res.json({ messages: messages.reverse() });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -332,7 +330,7 @@ router.get('/system/:chat_id/messages', auth, async (req, res) => {
     }
     const msgsSnap = await firebase.ref(`chats/${req.params.chat_id}/messages`).once('value');
     const messages = [];
-    msgsSnap.forEach(child => messages.push({ id: child.key, ...child.val() }));
+    msgsSnap.forEach(child => { messages.push({ id: child.key, ...child.val() }); });
     res.json({ messages, metadata: meta });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
