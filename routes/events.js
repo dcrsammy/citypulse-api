@@ -2,6 +2,7 @@ const router = require("express").Router();
 const db = require("../db");
 const auth = require("../middleware/auth");
 const jwt = require("jsonwebtoken");
+const { db: firebase } = require("../services/firebase");
 
 // GET /api/events — list all upcoming events
 router.get("/", async (req, res) => {
@@ -291,6 +292,11 @@ router.post("/:id/purchase", auth, async (req, res) => {
         await sendPushNotification(user.fcm_token, 'Ticket Confirmed!', 'Your ticket for ' + eventTitle.title + ' is ready. See you there!', { type: 'ticket', purchase_id: purchase.id });
       }
     } catch(ne) { console.log('Ticket notification error:', ne.message); }
+    try {
+      const evVendor = await db.query('SELECT vendor_id FROM events WHERE id=$1', [req.params.id]);
+      const vid = evVendor.rows[0] && evVendor.rows[0].vendor_id;
+      if (vid) await firebase.ref('vendor_live/' + vid + '/events_updated').set(Date.now());
+    } catch (fre) { console.error('Firebase signal error:', fre.message); }
     res.status(201).json({ purchase, tickets, cpp_earned: cpp, message: `${quantity} ticket(s) confirmed!` });
   } catch (err) {
     await client.query("ROLLBACK");
@@ -403,6 +409,11 @@ router.post("/confirm-payment", auth, async (req, res) => {
         await sendPushNotification(user.fcm_token, 'Ticket Confirmed!', 'Your ticket for ' + eventRes2.rows[0].title + ' is ready!', { type: 'ticket', purchase_id: purchase.id });
       }
     } catch(ne) { console.log('Ticket notification error:', ne.message); }
+    try {
+      const evVendor2 = await db.query('SELECT vendor_id FROM events WHERE id=$1', [event_id]);
+      const vid2 = evVendor2.rows[0] && evVendor2.rows[0].vendor_id;
+      if (vid2) await firebase.ref('vendor_live/' + vid2 + '/events_updated').set(Date.now());
+    } catch (fre) { console.error('Firebase signal error:', fre.message); }
     res.json({ tickets, cpp_earned: cpp });
   } catch (err) {
     await client.query("ROLLBACK");
