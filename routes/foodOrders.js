@@ -2,6 +2,7 @@ const { notifyOrderStatus } = require("../services/notifications");
 const { notifyNewOrder } = require("../services/notifications");
 const { createSystemChat } = require("../services/systemChat");
 const dbPg = require("../db");
+const { db: firebase } = require("../services/firebase");
 const router = require("express").Router();
 const db     = require("../db");
 const auth   = require("../middleware/auth");
@@ -119,6 +120,14 @@ router.post("/", async (req, res) => {
         }).catch(e => console.error("System chat error:", e.message));
       }
     } catch (sce) { console.error("System chat setup error:", sce.message); }
+    // Real-time signal to vendor dashboard
+    try {
+      const vRes = await dbPg.query("SELECT vendor_id FROM venues WHERE id=$1", [venue_id]);
+      const vid = vRes.rows[0] && vRes.rows[0].vendor_id;
+      if (vid) {
+        await firebase.ref("vendor_live/" + vid + "/orders_updated").set(Date.now());
+      }
+    } catch (fre) { console.error("Firebase signal error:", fre.message); }
 
     res.status(201).json({ order, message: "Order placed successfully." });
   } catch (err) {
@@ -185,8 +194,15 @@ router.patch("/:id/status", async (req, res) => {
       [status, req.params.id]
     );
     if (!result.rows[0]) return res.status(404).json({ error: "Order not found." });
+    const order = result.rows[0];
+    notifyOrderStatus(order.id, status).catch(e => console.error("Notify error:", e.message));
+    try {
+      const vRes = await dbPg.query("SELECT vendor_id FROM venues WHERE id=$1", [order.venue_id]);
+      const vid = vRes.rows[0] && vRes.rows[0].vendor_id;
+      if (vid) await firebase.ref("vendor_live/" + vid + "/orders_updated").set(Date.now());
+    } catch (fre) { console.error("Firebase signal error:", fre.message); }
 
-    res.json({ order: result.rows[0] });
+    res.json({ order });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
