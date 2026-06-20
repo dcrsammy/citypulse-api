@@ -2,6 +2,7 @@ const router = require("express").Router();
 const { sendEmail, templates } = require("../services/email");
 const db     = require("../db");
 const auth   = require("../middleware/auth");
+const { db: firebase } = require("../services/firebase");
 
 // POST /api/reservations — make a reservation (with optional pre-order)
 router.post("/", auth, async (req, res) => {
@@ -92,6 +93,12 @@ router.post("/", auth, async (req, res) => {
     } catch(emailErr) {
       console.error('Reservation email failed:', emailErr.message);
     }
+    // Real-time signal to vendor dashboard
+    try {
+      const vRes = await db.query("SELECT vendor_id FROM venues WHERE id=$1", [venue_id]);
+      const vid = vRes.rows[0] && vRes.rows[0].vendor_id;
+      if (vid) await firebase.ref("vendor_live/" + vid + "/reservations_updated").set(Date.now());
+    } catch (fre) { console.error("Firebase signal error:", fre.message); }
     res.status(201).json({
       reservation: reservation.rows[0],
       pre_order_total: preOrderTotal,
@@ -178,7 +185,15 @@ router.patch("/:id/status", auth, async (req, res) => {
       "UPDATE reservations SET status=$1, updated_at=NOW() WHERE id=$2 RETURNING *",
       [status, req.params.id]
     );
-    res.json({ reservation: result.rows[0] });
+    const rsv = result.rows[0];
+    if (rsv) {
+      try {
+        const vRes = await db.query("SELECT vendor_id FROM venues WHERE id=$1", [rsv.venue_id]);
+        const vid = vRes.rows[0] && vRes.rows[0].vendor_id;
+        if (vid) await firebase.ref("vendor_live/" + vid + "/reservations_updated").set(Date.now());
+      } catch (fre) { console.error("Firebase signal error:", fre.message); }
+    }
+    res.json({ reservation: rsv });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
