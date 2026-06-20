@@ -240,6 +240,7 @@ router.get('/conversations', auth, async (req, res) => {
     const snapshot = await firebase.ref(`users/${req.user.id}/chats`).once('value');
     const chatIds = [];
     snapshot.forEach(child => chatIds.push({ chat_id: child.key, updated_at: child.val() }));
+    console.log('DEBUG req.user.id:', req.user.id);
     console.log('DEBUG chatIds:', JSON.stringify(chatIds));
     chatIds.sort((a, b) => b.updated_at - a.updated_at);
     const conversations = [];
