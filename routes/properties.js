@@ -2,6 +2,7 @@ const router = require('express').Router();
 const db = require('../db');
 const auth = require('../middleware/auth');
 const jwt = require('jsonwebtoken');
+const { db: firebase } = require('../services/firebase');
 
 // GET /api/properties — list properties
 router.get('/', async (req, res) => {
@@ -140,6 +141,11 @@ router.post('/:id/book', auth, async (req, res) => {
     const cpp = Math.floor(total_amount / 1000) * 10;
     if (cpp > 0) await client.query('UPDATE users SET cpp_points = cpp_points + $1 WHERE id=$2', [cpp, req.user.id]);
     await client.query('COMMIT');
+    try {
+      const pRes = await db.query('SELECT host_id FROM properties WHERE id=$1', [req.params.id]);
+      const hid = pRes.rows[0] && pRes.rows[0].host_id;
+      if (hid) await firebase.ref('vendor_live/' + hid + '/properties_updated').set(Date.now());
+    } catch (fre) { console.error('Firebase signal error:', fre.message); }
     res.json({ booking: bookingRes.rows[0], cpp_earned: cpp });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -167,6 +173,11 @@ router.post('/confirm-payment', auth, async (req, res) => {
     const cpp = Math.floor(bookingRes.rows[0].total_amount / 1000) * 10;
     if (cpp > 0) await client.query('UPDATE users SET cpp_points = cpp_points + $1 WHERE id=$2', [cpp, req.user.id]);
     await client.query('COMMIT');
+    try {
+      const pRes2 = await db.query('SELECT host_id FROM properties WHERE id=$1', [bookingRes.rows[0].property_id]);
+      const hid2 = pRes2.rows[0] && pRes2.rows[0].host_id;
+      if (hid2) await firebase.ref('vendor_live/' + hid2 + '/properties_updated').set(Date.now());
+    } catch (fre) { console.error('Firebase signal error:', fre.message); }
     res.json({ booking: bookingRes.rows[0], cpp_earned: cpp });
   } catch (err) {
     await client.query('ROLLBACK');
