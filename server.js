@@ -3,6 +3,8 @@ const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 require("dotenv").config();
+const http = require("http");
+const { initSocket } = require("./services/socket");
 const app = express();
 app.set('trust proxy', 1);
 app.use(helmet());
@@ -59,5 +61,7 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ error: err.message || "Internal server error" });
 });
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`CityPulse API running on port ${PORT}`));
+const httpServer = http.createServer(app);
+initSocket(httpServer);
+httpServer.listen(PORT, () => console.log(`CityPulse API running on port ${PORT} (with WebSocket)`));
 
